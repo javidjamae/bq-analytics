@@ -142,6 +142,48 @@ test('waitUntil hands the write to the platform and still reports failures', asy
   assert.deepEqual(reported, ['insert failed'])
 })
 
+test('allowPublic accepts secretless requests but forces the public source', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({ sink, secret: SECRET, allowPublic: true })
+
+  const response = await handler(
+    // A public caller claiming a trusted server source must not keep it.
+    post({ events: [{ event_name: 'call_booked', source: 'calendly-webhook' }] })
+  )
+
+  assert.equal(response.status, 202)
+  assert.equal(sink.events[0]?.source, 'browser')
+})
+
+test('allowPublic still honours the secret path for trusted callers', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({ sink, secret: SECRET, allowPublic: true })
+
+  await handler(post({ events: [{ event_name: 'call_booked', source: 'calendly-webhook' }] }, SECRET))
+
+  assert.equal(sink.events[0]?.source, 'calendly-webhook')
+})
+
+test('a wrong secret is rejected even when the endpoint is public', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({ sink, secret: SECRET, allowPublic: true })
+
+  const response = await handler(post({ events: [{ event_name: 'x' }] }, 'wrong'))
+
+  assert.equal(response.status, 401)
+  assert.equal(sink.events.length, 0)
+})
+
+test('production build is allowed with no secret when allowPublic is explicit', () => {
+  const previous = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  try {
+    assert.doesNotThrow(() => createIngestHandler({ sink: recordingSink(), allowPublic: true }))
+  } finally {
+    process.env.NODE_ENV = previous
+  }
+})
+
 test('refuses to build an unauthenticated endpoint in production', () => {
   const previous = process.env.NODE_ENV
   process.env.NODE_ENV = 'production'

@@ -8,7 +8,14 @@ minor versions may still change the public API; the entries say so when they do.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+- `createIngestHandler` accepts `allowPublic` (+ `publicSource`, default
+  `browser`): accept secretless browser traffic on the same endpoint that
+  serves secret-bearing server callers. Public events get their `source`
+  forced, so an unauthenticated request can never impersonate a trusted
+  server source; a wrong secret is still rejected rather than downgraded to
+  public. Browser analytics cannot hold a secret, so without this the
+  handler's production guard made `createBrowserTracker` unusable against it.
 
 ## 0.1.0 — 2026-08-08
 

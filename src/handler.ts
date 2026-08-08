@@ -6,7 +6,8 @@ export interface IngestHandlerOptions {
   sink: Sink
   /**
    * Shared secret callers must present as `x-analytics-secret`. Omitting it
-   * leaves the endpoint open, which is refused outright in production.
+   * leaves the endpoint open, which is refused outright in production unless
+   * `allowPublic` is set.
    */
   secret?: string
   /** Stamped onto events that don't declare their own. Default `web`. */
@@ -24,6 +25,19 @@ export interface IngestHandlerOptions {
    * returned, so events vanish under exactly the conditions you'd never test.
    */
   waitUntil?: (promise: Promise<unknown>) => void
+  /**
+   * Accept requests that present no secret — browser traffic, which cannot
+   * hold one. Public events get `source` forced to `publicSource`, so a
+   * request without the secret can never impersonate a trusted server source
+   * (a forged `calendly-webhook` row would poison conversion queries).
+   *
+   * Like all client-side analytics, a public endpoint accepts forgeable
+   * events; keep anything you'd bet money on (conversions) coming from a
+   * secret-bearing server caller, and treat public rows as directional.
+   */
+  allowPublic?: boolean
+  /** Source stamped on public (no-secret) events. Default `browser`. */
+  publicSource?: string
 }
 
 function secretMatches(provided: string | null, expected: string): boolean {
@@ -54,16 +68,25 @@ export function createIngestHandler(options: IngestHandlerOptions) {
     maxEvents = 100,
     onError,
     waitUntil,
+    allowPublic = false,
+    publicSource = 'browser',
   } = options
 
-  if (!secret && process.env.NODE_ENV === 'production') {
+  if (!secret && !allowPublic && process.env.NODE_ENV === 'production') {
     throw new Error(
-      'createIngestHandler: `secret` is required in production — an open ingest endpoint lets anyone write rows into your analytics table.'
+      'createIngestHandler: `secret` is required in production — an open ingest endpoint lets anyone write rows into your analytics table. Pass allowPublic: true only if you mean to accept unauthenticated browser traffic.'
     )
   }
 
   return async function handleIngest(request: Request): Promise<Response> {
-    if (secret && !secretMatches(request.headers.get('x-analytics-secret'), secret)) {
+    const provided = request.headers.get('x-analytics-secret')
+    // A wrong secret is always rejected, even on a public endpoint — an
+    // explicit failed auth attempt must not silently downgrade to public.
+    if (provided !== null && (!secret || !secretMatches(provided, secret))) {
+      return Response.json({ error: 'unauthorized' }, { status: 401 })
+    }
+    const trusted = provided !== null && secret !== undefined
+    if (!trusted && !allowPublic) {
       return Response.json({ error: 'unauthorized' }, { status: 401 })
     }
 
@@ -88,7 +111,9 @@ export function createIngestHandler(options: IngestHandlerOptions) {
       return Response.json({ error: 'every event needs an event_name' }, { status: 400 })
     }
 
-    const stamped = events.map((e) => ({ ...e, source: e.source ?? body.source ?? source }))
+    const stamped = trusted
+      ? events.map((e) => ({ ...e, source: e.source ?? body.source ?? source }))
+      : events.map((e) => ({ ...e, source: publicSource }))
     const write = sink.send(stamped)
 
     if (waitUntil) {

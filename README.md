@@ -96,6 +96,23 @@ const analytics = createTracker({
 await analytics.track('call_booked', { cta_source: '/blog/why-ab-tests-lie' })
 ```
 
+### 3b. Serving browser traffic on the same endpoint
+
+The browser cannot hold a secret, so a page-facing endpoint needs
+`allowPublic`. Public (secretless) events get their `source` forced to
+`browser`, so they can never impersonate a trusted server source; requests
+that do present the secret keep their declared source. Treat public rows as
+directional and keep money-grade events (conversions) coming from
+secret-bearing server callers such as webhooks.
+
+```ts
+export const POST = createIngestHandler({
+  sink: new BigQuerySink(),
+  secret: process.env.ANALYTICS_API_SECRET, // trusted server callers
+  allowPublic: true,                        // browser beacons, same URL
+})
+```
+
 ### 4. Track from the browser
 
 ```ts
