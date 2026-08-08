@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-test/
+*.log
+.env
+.env.*
+!.env.example
+*-credentials.json
+service-account*.json
+.DS_Store

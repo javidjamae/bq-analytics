@@ -1,0 +1,51 @@
+{
+  "name": "bq-analytics",
+  "version": "0.1.0",
+  "description": "Use BigQuery as a product analytics backend: one events table, typed tracking, and an ingestion handler you can mount in any framework.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./schema/events.schema.json": "./schema/events.schema.json",
+    "./schema/events.ddl.sql": "./schema/events.ddl.sql"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "sql",
+    "scripts"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/__tests__/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "release": "node scripts/release.mjs"
+  },
+  "peerDependencies": {
+    "@google-cloud/bigquery": ">=7"
+  },
+  "peerDependenciesMeta": {
+    "@google-cloud/bigquery": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

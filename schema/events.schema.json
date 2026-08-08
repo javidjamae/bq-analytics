@@ -1,0 +1,13 @@
+[
+  { "name": "event_id", "type": "STRING", "mode": "REQUIRED", "description": "UUID dedupe key" },
+  { "name": "event_name", "type": "STRING", "mode": "REQUIRED", "description": "Event name, e.g. quickstart_step_completed" },
+  { "name": "user_id", "type": "STRING", "mode": "NULLABLE", "description": "Auth user ID, once known" },
+  { "name": "anonymous_id", "type": "STRING", "mode": "NULLABLE", "description": "Client-side ID for pre-auth tracking" },
+  { "name": "session_id", "type": "STRING", "mode": "NULLABLE", "description": "Browser session ID" },
+  { "name": "timestamp", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "When the event occurred" },
+  { "name": "properties", "type": "JSON", "mode": "NULLABLE", "description": "Arbitrary event properties (step_number, job_id, etc.)" },
+  { "name": "context", "type": "JSON", "mode": "NULLABLE", "description": "Device, page, referrer metadata" },
+  { "name": "source", "type": "STRING", "mode": "NULLABLE", "description": "Event source: web, api-gateway, cron" },
+  { "name": "created_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "Server receipt time" },
+  { "name": "is_test", "type": "BOOLEAN", "mode": "REQUIRED", "description": "True for test events — filter with WHERE NOT is_test" }
+]
