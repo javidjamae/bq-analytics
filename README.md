@@ -36,6 +36,12 @@ can't be reproduced is worse than one version behind. See [Versioning](#versioni
 `@google-cloud/bigquery` is an optional peer dependency — install it only in
 the app that owns the credentials.
 
+**Install scripts must be allowed.** TypeScript is compiled by a `prepare`
+script when the git dependency is installed, so `npm ci --ignore-scripts` (and
+npm's newer `allowScripts` gate) will leave the package with no `dist/` and
+fail at import. Either allow the script, or vendor a build. This is the one
+sharp edge of installing from git rather than a registry.
+
 ## Architecture
 
 One service owns the GCP service account and writes to BigQuery. Everything
