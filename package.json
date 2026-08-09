@@ -1,6 +1,6 @@
 {
   "name": "bq-analytics",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Use BigQuery as a product analytics backend: one events table, typed tracking, and an ingestion handler you can mount in any framework.",
   "private": true,
   "type": "module",

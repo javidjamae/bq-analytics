@@ -8,6 +8,10 @@ minor versions may still change the public API; the entries say so when they do.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.2.0 — 2026-08-08
+
 ### Added
 - `createIngestHandler` accepts `allowPublic` (+ `publicSource`, default
   `browser`): accept secretless browser traffic on the same endpoint that

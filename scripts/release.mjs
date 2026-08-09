@@ -16,8 +16,11 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const run = (cmd, args, opts = {}) =>
-  execFileSync(cmd, args, { cwd: root, encoding: 'utf8', ...opts }).trim()
+const run = (cmd, args, opts = {}) => {
+  // With stdio: 'inherit' execFileSync returns null, not a string.
+  const out = execFileSync(cmd, args, { cwd: root, encoding: 'utf8', ...opts })
+  return out === null ? '' : out.trim()
+}
 
 const bump = process.argv[2]
 if (!bump) {
