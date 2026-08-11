@@ -1,0 +1,43 @@
+name: ci
+
+# Runs the test suite on every push and pull request.
+#
+# This exists because a broken test script sat undetected until the first
+# release was cut: the only thing running tests was release.yml, so the failure
+# surfaced at the worst moment, with a tag already pushed. Catching it here
+# costs a minute and keeps a release from being the thing that discovers it.
+#
+# Node 20 is deliberate — it is the `engines` floor, and the bug this was added
+# for reproduced only below Node 22.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - run: npm ci
+
+      - run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify the build produced dist/
+        run: |
+          test -f dist/index.js || { echo "dist/index.js missing after build"; exit 1; }
+          test -f dist/server.js || { echo "dist/server.js missing after build"; exit 1; }
+          test -f dist/browser.js || { echo "dist/browser.js missing after build"; exit 1; }
