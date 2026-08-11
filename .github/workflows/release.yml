@@ -1,0 +1,90 @@
+name: release
+
+# Builds the package and attaches the tarball to a GitHub Release.
+#
+# Consumers install that tarball rather than this git repository. The
+# difference matters: a git dependency is compiled at install time by a
+# `prepare` script, which needs TypeScript, which is a devDependency — so
+# `pnpm install --prod`, `npm ci --omit=dev` and `--ignore-scripts` all fail
+# with the package half-installed. A tarball has dist/ in it already and needs
+# no build step, so it installs anywhere.
+#
+# Nothing is published to the npm registry. `npm pack` is used only as a local
+# packaging command, because it honours the `files` field and produces the
+# standard package/ layout that npm, pnpm and yarn expect.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Allows re-running against an existing tag if a release needs rebuilding.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build a release for (e.g. v0.3.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify the build actually produced dist/
+        run: |
+          test -f dist/index.js || { echo "dist/index.js missing after build"; exit 1; }
+          test -f dist/server.js || { echo "dist/server.js missing after build"; exit 1; }
+          test -f dist/browser.js || { echo "dist/browser.js missing after build"; exit 1; }
+
+      - name: Pack
+        id: pack
+        run: |
+          FILE=$(npm pack --silent)
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "Packed $FILE"
+
+      - name: Verify the tarball contains the build
+        run: |
+          tar -tzf "${{ steps.pack.outputs.file }}" | grep -q '^package/dist/index.js$' \
+            || { echo "tarball has no dist/ — consumers would fail at import"; exit 1; }
+          echo "tarball contents:"
+          tar -tzf "${{ steps.pack.outputs.file }}" | head -30
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          # Idempotent: create the release if this is a fresh tag, otherwise
+          # replace the asset on the existing one so a rebuild is not blocked.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${{ steps.pack.outputs.file }}" --clobber
+          else
+            gh release create "$TAG" "${{ steps.pack.outputs.file }}" \
+              --title "$TAG" \
+              --notes "Install this release:
+
+\`\`\`jsonc
+\"bq-analytics\": \"https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.pack.outputs.file }}\"
+\`\`\`
+
+See CHANGELOG.md for what changed."
+          fi

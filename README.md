@@ -21,26 +21,32 @@ webhooks, cron jobs, background workers — never touch a browser at all.
 
 ## Install
 
-Consumers install straight from GitHub. There is no npm registry involved.
+Consumers install a prebuilt tarball from a GitHub Release. There is no npm
+registry involved.
 
 ```jsonc
 // package.json
 "dependencies": {
-  "bq-analytics": "github:javidjamae/bq-analytics#v0.2.0"
+  "bq-analytics": "https://github.com/javidjamae/bq-analytics/releases/download/v0.2.0/bq-analytics-0.2.0.tgz"
 }
 ```
 
-**Always pin a tag.** `#main` will move under you, and a build that
-can't be reproduced is worse than one version behind. See [Versioning](#versioning).
+The URL pins the version, and the lockfile records a checksum for it, so an
+install is reproducible and a swapped asset fails loudly.
 
 `@google-cloud/bigquery` is an optional peer dependency — install it only in
 the app that owns the credentials.
 
-**Install scripts must be allowed.** TypeScript is compiled by a `prepare`
-script when the git dependency is installed, so `npm ci --ignore-scripts` (and
-npm's newer `allowScripts` gate) will leave the package with no `dist/` and
-fail at import. Either allow the script, or vendor a build. This is the one
-sharp edge of installing from git rather than a registry.
+**Do not install this as a git dependency** (`github:javidjamae/bq-analytics`).
+It will appear to work and then fail in production. A git dependency is
+compiled at install time by a `prepare` script, and the TypeScript that script
+needs is a devDependency, so `pnpm install --prod`, `npm ci --omit=dev` and
+`--ignore-scripts` all fail with the package half-installed. Docker images are
+where this bites, and a laptop never reproduces it because a laptop install is
+never production-only.
+
+The release tarball has `dist/` in it already, so nothing is compiled at
+install time and none of that applies.
 
 ## Architecture
 
@@ -202,8 +208,7 @@ and no library can enforce that for you.
 
 ## Versioning
 
-The git tag is the version. `package.json` alone changes nothing for a consumer
-installing from a git URL, so releases keep four things in agreement:
+The git tag is the version. Releases keep four things in agreement:
 `package.json`, `src/version.ts` (exported as `VERSION`, and asserted against
 `package.json` by the test suite), the CHANGELOG entry, and the annotated tag.
 
@@ -212,9 +217,16 @@ npm run release -- patch   # or minor, major, or an explicit 1.2.3
 git push && git push --tags
 ```
 
+Pushing the tag is what publishes it. That triggers
+`.github/workflows/release.yml`, which tests, builds, packs and attaches
+`bq-analytics-<version>.tgz` to a GitHub Release. Until that workflow is green
+there is nothing for a consumer to install, so a half-finished release cannot
+be picked up by accident.
+
 Pre-1.0, minor versions may change the public API; the CHANGELOG says so when
-they do. Upgrade a consumer by bumping the `#vX.Y.Z` in its `package.json`,
-which keeps the upgrade visible in that repo's diff and revertible on its own.
+they do. Upgrade a consumer by bumping the version in the release URL in its
+`package.json`, which keeps the upgrade visible in that repo's diff and
+revertible on its own.
 
 ## Development
 

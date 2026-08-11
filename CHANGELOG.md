@@ -1,14 +1,30 @@
 # Changelog
 
-Consumers install this package from a git URL, so **the git tag is the version**.
-Every entry below corresponds to a `vX.Y.Z` tag you can pin.
+Consumers install a prebuilt tarball attached to a GitHub Release, so **the git
+tag is the version**. Every entry below corresponds to a `vX.Y.Z` tag you can
+pin.
 
 This project follows [semantic versioning](https://semver.org). Before 1.0.0,
 minor versions may still change the public API; the entries say so when they do.
 
 ## Unreleased
 
-_Nothing yet._
+### Changed
+
+- **Releases now ship a prebuilt tarball, and git installs are no longer
+  supported.** Pushing a `vX.Y.Z` tag triggers a workflow that tests, builds and
+  attaches `bq-analytics-<version>.tgz` to a GitHub Release; consumers install
+  that URL instead of `github:javidjamae/bq-analytics#vX.Y.Z`.
+
+  The `prepare` script is gone with it. Compiling at install time cannot work
+  for a production install: the TypeScript the build needs is a devDependency,
+  so `pnpm install --prod`, `npm ci --omit=dev` and `--ignore-scripts` all
+  failed with the package half-installed and no `dist/`. It surfaced as
+  `ERR_PNPM_PREPARE_PACKAGE` in a Docker build, and never on a laptop, because
+  a laptop install is never production-only.
+
+  Migrating: replace the `github:` spec with the release URL from the entry
+  below. Nothing about the API changes.
 
 ## 0.2.0 — 2026-08-08
 

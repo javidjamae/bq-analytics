@@ -82,7 +82,12 @@ tagged v${next}. Publish it with:
 
   git push && git push --tags
 
-Consumers pin it with:
+Pushing the tag triggers .github/workflows/release.yml, which builds the
+package and attaches the tarball to a GitHub Release. Consumers install that
+asset, not the repository — a git dependency would try to compile itself at
+install time and fail in any production-only install.
 
-  "bq-analytics": "github:javidjamae/bq-analytics#v${next}"
+Once the workflow is green, consumers pin it with:
+
+  "bq-analytics": "https://github.com/javidjamae/bq-analytics/releases/download/v${next}/bq-analytics-${next}.tgz"
 `)
