@@ -11,6 +11,10 @@ minor versions may still change the public API; the entries say so when they do.
 
 _Nothing yet._
 
+## 0.3.1 — 2026-08-11
+
+_Nothing yet._
+
 ## 0.3.0 — 2026-08-11
 
 ### Changed
