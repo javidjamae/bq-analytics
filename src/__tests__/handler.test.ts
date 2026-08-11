@@ -42,9 +42,9 @@ test('an event may override the default source', async () => {
   const sink = recordingSink()
   const handler = createIngestHandler({ sink, secret: SECRET, source: 'web' })
 
-  await handler(post({ events: [{ event_name: 'call_booked', source: 'calendly-webhook' }] }, SECRET))
+  await handler(post({ events: [{ event_name: 'call_booked', source: 'payment-webhook' }] }, SECRET))
 
-  assert.equal(sink.events[0]?.source, 'calendly-webhook')
+  assert.equal(sink.events[0]?.source, 'payment-webhook')
 })
 
 test('rejects a wrong or missing secret without touching the sink', async () => {
@@ -148,7 +148,7 @@ test('allowPublic accepts secretless requests but forces the public source', asy
 
   const response = await handler(
     // A public caller claiming a trusted server source must not keep it.
-    post({ events: [{ event_name: 'call_booked', source: 'calendly-webhook' }] })
+    post({ events: [{ event_name: 'call_booked', source: 'payment-webhook' }] })
   )
 
   assert.equal(response.status, 202)
@@ -159,9 +159,9 @@ test('allowPublic still honours the secret path for trusted callers', async () =
   const sink = recordingSink()
   const handler = createIngestHandler({ sink, secret: SECRET, allowPublic: true })
 
-  await handler(post({ events: [{ event_name: 'call_booked', source: 'calendly-webhook' }] }, SECRET))
+  await handler(post({ events: [{ event_name: 'call_booked', source: 'payment-webhook' }] }, SECRET))
 
-  assert.equal(sink.events[0]?.source, 'calendly-webhook')
+  assert.equal(sink.events[0]?.source, 'payment-webhook')
 })
 
 test('a wrong secret is rejected even when the endpoint is public', async () => {

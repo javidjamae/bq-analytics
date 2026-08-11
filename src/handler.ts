@@ -29,7 +29,7 @@ export interface IngestHandlerOptions {
    * Accept requests that present no secret — browser traffic, which cannot
    * hold one. Public events get `source` forced to `publicSource`, so a
    * request without the secret can never impersonate a trusted server source
-   * (a forged `calendly-webhook` row would poison conversion queries).
+   * (a forged `payment-webhook` row would poison conversion queries).
    *
    * Like all client-side analytics, a public endpoint accepts forgeable
    * events; keep anything you'd bet money on (conversions) coming from a

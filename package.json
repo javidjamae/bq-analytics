@@ -2,7 +2,23 @@
   "name": "bq-analytics",
   "version": "0.2.0",
   "description": "Use BigQuery as a product analytics backend: one events table, typed tracking, and an ingestion handler you can mount in any framework.",
-  "private": true,
+  "license": "MIT",
+  "author": "Javid Jamae",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/javidjamae/bq-analytics.git"
+  },
+  "homepage": "https://github.com/javidjamae/bq-analytics#readme",
+  "bugs": {
+    "url": "https://github.com/javidjamae/bq-analytics/issues"
+  },
+  "keywords": [
+    "analytics",
+    "bigquery",
+    "product-analytics",
+    "events",
+    "tracking"
+  ],
   "type": "module",
   "engines": {
     "node": ">=20"

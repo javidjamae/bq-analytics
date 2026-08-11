@@ -3,7 +3,7 @@
  * from EVENTS_SCHEMA, and the DDL below is the same thing for anyone
  * provisioning by hand or through Terraform.
  *
- * The shape deliberately matches the table FFmpeg Micro has been writing to
+ * The shape deliberately matches the table this pipeline has been writing to
  * since 2025, so an existing dataset can adopt this library without a
  * migration.
  */
