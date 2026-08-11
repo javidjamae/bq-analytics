@@ -23,8 +23,9 @@ _Nothing yet._
 
 ## 0.1.0 — 2026-08-08
 
-First cut. Extracted from the BigQuery analytics pipeline running in FFmpeg
-Micro since 2025, generalised so any project can use the same table and tools.
+First cut. Extracted from a production SaaS product's BigQuery analytics
+pipeline, running since 2025, generalised so any project can use the same
+table and tools.
 
 ### Added
 - `createTracker()` — typed `track` / `trackEvent` / `trackEvents`, with a
