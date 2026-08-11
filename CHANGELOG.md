@@ -41,8 +41,8 @@ Micro since 2025, generalised so any project can use the same table and tools.
 - `createBrowserTracker()` — anonymous and session id management, page context
   capture, and `sendBeacon` delivery that survives page unload.
 - The canonical `events` schema, as TypeScript, as a BigQuery schema JSON, and
-  as generated DDL. Matches FFmpeg Micro's existing table column for column, so
-  that dataset can adopt this library with no migration.
+  as generated DDL. Matches the originating table column for column, so an
+  existing dataset can adopt this library with no migration.
 - `scripts/provision.sh` — creates `analytics` and `analytics_dev` with the
   events table, day-partitioned on `timestamp`. Safe to re-run.
 - SQL recipes for funnels, per-page conversion attribution, and active users

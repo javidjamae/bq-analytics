@@ -3,10 +3,10 @@
 Use BigQuery as a product analytics backend: one events table, typed tracking,
 and an ingestion endpoint you can mount in any framework.
 
-It is the pipeline that has been running FFmpeg Micro's product analytics since
-2025, pulled out so other projects can use the same table shape and the same
-queries. No vendor, no per-event pricing, no sampling — your events, in your
-warehouse, queryable in SQL.
+It is a pipeline that has been running a production SaaS product's analytics
+since 2025, pulled out so other projects can use the same table shape and the
+same queries. No vendor, no per-event pricing, no sampling — your events, in
+your warehouse, queryable in SQL.
 
 ## Why not a product analytics SaaS
 
@@ -26,7 +26,7 @@ Consumers install straight from GitHub. There is no npm registry involved.
 ```jsonc
 // package.json
 "dependencies": {
-  "bq-analytics": "github:javidjamae/bq-analytics#v0.1.0"
+  "bq-analytics": "github:javidjamae/bq-analytics#v0.2.0"
 }
 ```
 
@@ -192,7 +192,7 @@ Across projects, keep to:
 
 - **snake_case, past tense**: `signed_up`, `call_booked`, `job_completed`
 - **the event names the thing that happened, not the UI that caused it** —
-  `call_booked`, not `calendly_iframe_success`
+  `call_booked`, not `checkout_iframe_success`
 - **`properties` for what varies, `context` for ambient facts.** Plan, amount,
   and source path are properties; page, referrer, device, and locale are context
 - **never put PII in `properties`.** Hash identifiers before they go in

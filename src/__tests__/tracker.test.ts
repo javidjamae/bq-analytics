@@ -45,12 +45,12 @@ test('event-supplied context wins over the tracker default', async () => {
   const sink = recordingSink()
   const tracker = createTracker({
     sink,
-    context: () => ({ app: 'user-growth', release: 'abc123' }),
+    context: () => ({ app: 'example-app', release: 'abc123' }),
   })
 
   await tracker.trackEvent({ event_name: 'page_viewed', context: { release: 'override' } })
 
-  assert.deepEqual(sink.events[0]?.context, { app: 'user-growth', release: 'override' })
+  assert.deepEqual(sink.events[0]?.context, { app: 'example-app', release: 'override' })
 })
 
 test('a failing sink never throws into the caller, but is always reported', async () => {
