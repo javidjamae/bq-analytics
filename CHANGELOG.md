@@ -9,6 +9,10 @@ minor versions may still change the public API; the entries say so when they do.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.3.0 — 2026-08-11
+
 ### Changed
 
 - **Releases now ship a prebuilt tarball, and git installs are no longer
