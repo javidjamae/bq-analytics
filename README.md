@@ -1,5 +1,13 @@
 # bq-analytics
 
+[![ci](https://github.com/javidjamae/bq-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/javidjamae/bq-analytics/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/javidjamae/bq-analytics?label=release)](https://github.com/javidjamae/bq-analytics/releases/latest)
+[![downloads](https://img.shields.io/github/downloads/javidjamae/bq-analytics/total?label=downloads)](https://github.com/javidjamae/bq-analytics/releases)
+[![last commit](https://img.shields.io/github/last-commit/javidjamae/bq-analytics)](https://github.com/javidjamae/bq-analytics/commits/main)
+[![license](https://img.shields.io/github/license/javidjamae/bq-analytics)](LICENSE)
+![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
+![BigQuery](https://img.shields.io/badge/BigQuery-669DF6?logo=googlebigquery&logoColor=white)
+
 Use BigQuery as a product analytics backend: one events table, typed tracking,
 and an ingestion endpoint you can mount in any framework.
 
@@ -27,12 +35,13 @@ registry involved.
 ```jsonc
 // package.json
 "dependencies": {
-  "bq-analytics": "https://github.com/javidjamae/bq-analytics/releases/download/v0.2.0/bq-analytics-0.2.0.tgz"
+  "bq-analytics": "https://github.com/javidjamae/bq-analytics/releases/download/v0.3.1/bq-analytics-0.3.1.tgz"
 }
 ```
 
 The URL pins the version, and the lockfile records a checksum for it, so an
-install is reproducible and a swapped asset fails loudly.
+install is reproducible and a swapped asset fails loudly. The release badge
+above tracks the current version if this snippet falls behind.
 
 `@google-cloud/bigquery` is an optional peer dependency — install it only in
 the app that owns the credentials.
