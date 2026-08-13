@@ -9,7 +9,16 @@ minor versions may still change the public API; the entries say so when they do.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- **Internal-traffic flag in the browser tracker.** Visit any page once with
+  `?internal=1` and that browser is marked in localStorage (`ba_internal`);
+  every subsequent event's properties carry `internal: true`, so your own
+  team's browsing on the live site is filterable with
+  `JSON_VALUE(properties, '$.internal') IS NULL`. `?internal=0` clears the
+  mark. Checked per event, so the param works on client-side navigations.
+  A new `internal` option on `createBrowserTracker` overrides both, and a
+  caller-supplied `internal` property always wins over the stamp.
 
 ## 0.3.1 — 2026-08-11
 
