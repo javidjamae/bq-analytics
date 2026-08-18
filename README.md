@@ -43,6 +43,29 @@ The URL pins the version, and the lockfile records a checksum for it, so an
 install is reproducible and a swapped asset fails loudly. The release badge
 above tracks the current version if this snippet falls behind.
 
+**Consumers on pnpm must pin 10.15.0 or newer.** GitHub redirects the release
+URL above to a signed `release-assets.githubusercontent.com` address whose
+token is valid for about an hour. pnpm 10.0.0 follows that redirect and writes
+the *signed* URL into `pnpm-lock.yaml` as the resolution, so the lockfile
+expires with the token and every later install fails:
+
+```
+ERR_PNPM_FETCH_618  GET https://release-assets.githubusercontent.com/... : jwt:expired - 618
+```
+
+pnpm 10.15.0 records the stable `github.com` URL instead and re-resolves the
+redirect at install time. Pin it in the consumer:
+
+```jsonc
+// package.json
+"packageManager": "pnpm@10.15.0"
+```
+
+The failure is delayed, which is what makes it confusing: the lockfile works
+until the token expires, then every install starts failing at once, including
+CI and production builds that were green an hour earlier. Nothing about the
+release or the tarball is wrong when this happens; only the lockfile entry is.
+
 `@google-cloud/bigquery` is an optional peer dependency — install it only in
 the app that owns the credentials.
 
