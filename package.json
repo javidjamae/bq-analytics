@@ -1,6 +1,6 @@
 {
   "name": "bq-analytics",
-  "version": "0.4.0",
+  "version": "0.3.1",
   "description": "Use BigQuery as a product analytics backend: one events table, typed tracking, and an ingestion handler you can mount in any framework.",
   "license": "MIT",
   "author": "Javid Jamae",
