@@ -41,3 +41,32 @@ jobs:
           test -f dist/index.js || { echo "dist/index.js missing after build"; exit 1; }
           test -f dist/server.js || { echo "dist/server.js missing after build"; exit 1; }
           test -f dist/browser.js || { echo "dist/browser.js missing after build"; exit 1; }
+
+  # Separate from `test` because it needs a browser download, which would cost
+  # a matrix-multiple of minutes for no extra signal — the tracker's behaviour
+  # does not vary by Node version, only by browser.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+
+      # The harness serves dist/browser.js to a real browser, so the build has
+      # to exist before the suite starts.
+      - run: npm run build
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

@@ -265,4 +265,17 @@ revertible on its own.
 ```bash
 npm install
 npm test        # compiles, then runs node:test against dist/
+
+npm run build   # the e2e harness serves dist/browser.js, so build first
+npx playwright install chromium
+npm run test:e2e
 ```
+
+The e2e suite drives `src/browser.ts` in a real Chromium through a small
+harness in `e2e/harness/` that records whatever the tracker delivers. It exists
+for the behaviour that stubbed globals cannot reach: delivery during page
+unload, the fetch fallback when a beacon is refused, storage that throws, and
+sessionStorage expiring with the tab. Asserting only that an event *arrived*
+is not enough for the unload cases — on localhost an ordinary fetch also
+completes before teardown — so the harness records which transport was used
+and the specs assert on that.
