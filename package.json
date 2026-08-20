@@ -49,7 +49,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && node --test dist-test/__tests__/*.test.js",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "test:e2e": "playwright test"
   },
   "peerDependencies": {
     "@google-cloud/bigquery": ">=7"
@@ -60,6 +61,7 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
   }

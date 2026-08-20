@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>bq-analytics e2e harness</title>
+  </head>
+  <body>
+    <h1>bq-analytics e2e harness</h1>
+    <p>Driven by Playwright. Nothing here is meant to be clicked by a human.</p>
+
+    <script type="module">
+      import { createBrowserTracker } from '/dist/browser.js'
+
+      // Exposed so specs can build a tracker with per-test options (isTest,
+      // internal, …) instead of needing a harness page per configuration.
+      window.makeTracker = (options = {}) => createBrowserTracker({ url: '/collect', ...options })
+      window.tracker = window.makeTracker()
+      window.harnessReady = true
+    </script>
+  </body>
+</html>
