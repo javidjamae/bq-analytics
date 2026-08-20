@@ -7,6 +7,21 @@ export interface BrowserTrackerOptions {
   source?: string
   /** Marks traffic as test. Default: true unless the host looks like production. */
   isTest?: boolean
+  /**
+   * Marks this browser's traffic as internal (your own team browsing the
+   * live site). Default: driven by the `?internal=1` / `?internal=0` URL
+   * param, persisted per browser in localStorage, and checked on every event
+   * so the param also works on client-side navigations. When true, every
+   * event's properties carry `internal: true` — filter with
+   * `JSON_VALUE(properties, '$.internal') IS NULL`.
+   *
+   * Passing a boolean forces what this tracker stamps and turns off the
+   * automatic behaviour. `?internal=1` is still recorded while forced, so
+   * removing the override later picks the mark back up — but a site that
+   * always passes `false` will never stamp anything. Leave it undefined
+   * unless you specifically need to force the state (SSR, tests).
+   */
+  internal?: boolean
   /** Minutes of inactivity before a new session id is minted. Default 30. */
   sessionTimeoutMinutes?: number
   /** Called on delivery failure. Default: console.error. */
@@ -25,6 +40,7 @@ export interface BrowserTracker {
 const ANON_KEY = 'ba_anonymous_id'
 const SESSION_KEY = 'ba_session'
 const USER_KEY = 'ba_user_id'
+const INTERNAL_KEY = 'ba_internal'
 
 function safeStorage(kind: 'local' | 'session'): Storage | null {
   try {
@@ -155,15 +171,34 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
     }
   }
 
+  function internalFlag(): boolean {
+    if (typeof window === 'undefined') return options.internal ?? false
+    const store = safeStorage('local')
+    try {
+      const param = new URLSearchParams(window.location.search).get('internal')
+      if (param === '1') write(store, INTERNAL_KEY, '1')
+      if (param === '0') write(store, INTERNAL_KEY, '0')
+    } catch {
+      /* a malformed URL never breaks tracking */
+    }
+    // The param is recorded above even when the option overrides the result.
+    // Returning early instead would make `internal={false}` — the obvious way
+    // to write a server-rendered default — turn ?internal=1 into a permanent
+    // no-op for that site, and nothing about the failure is observable.
+    return options.internal ?? read(store, INTERNAL_KEY) === '1'
+  }
+
   function build(eventName: string, properties?: Record<string, unknown>): AnalyticsEvent {
     const store = safeStorage('local')
+    // internal is spread first so a caller can still override it explicitly.
+    const props = internalFlag() ? { internal: true, ...(properties ?? {}) } : (properties ?? null)
     return {
       event_name: eventName,
       user_id: read(store, USER_KEY),
       anonymous_id: anonymousId(),
       session_id: sessionId(),
       timestamp: new Date().toISOString(),
-      properties: properties ?? null,
+      properties: props,
       context: pageContext(),
       source,
       is_test: isTest,

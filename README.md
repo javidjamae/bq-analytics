@@ -197,6 +197,16 @@ Polluting real analytics from a laptop is therefore an explicit choice, not an
 accident — which matters, because the damage is silent and permanent. Every
 query in `sql/` filters `WHERE NOT is_test`.
 
+### Internal traffic
+
+`is_test` covers localhost and previews, but your own team browsing the
+LIVE site still records like real visitors. Open any page once with
+`?internal=1` and the tracker marks that browser in localStorage: every
+later event carries `internal: true` in its properties, on every page,
+until `?internal=0` clears it. Filter it out with
+`AND JSON_VALUE(properties, '$.internal') IS NULL`, or pass
+`internal: true|false` to `createBrowserTracker` to force the state.
+
 ## Environment
 
 | Variable | Used by | Default |
