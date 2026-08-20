@@ -117,6 +117,20 @@ test('the explicit option overrides URL and storage', async () => {
   assert.equal((await lastEvent()).properties?.internal, undefined)
 })
 
+test('?internal=1 is still recorded while an explicit option forces it off', async () => {
+  stubBrowser('?internal=1')
+  const forced = createBrowserTracker({ url: '/api/events', internal: false })
+  forced.track('forced_off')
+  assert.equal((await lastEvent()).properties?.internal, undefined)
+
+  // Same browser, same storage, override dropped: the mark laid down during
+  // the forced visit is what a tracker without the option should now see.
+  const auto = createBrowserTracker({ url: '/api/events' })
+  navigate('')
+  auto.track('after_override_removed')
+  assert.equal((await lastEvent()).properties?.internal, true)
+})
+
 test('a caller-supplied internal property wins over the stamp', async () => {
   stubBrowser('?internal=1')
   const tracker = createBrowserTracker({ url: '/api/events' })

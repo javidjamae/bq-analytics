@@ -13,8 +13,13 @@ export interface BrowserTrackerOptions {
    * param, persisted per browser in localStorage, and checked on every event
    * so the param also works on client-side navigations. When true, every
    * event's properties carry `internal: true` — filter with
-   * `JSON_VALUE(properties, '$.internal') IS NULL`. Pass explicitly to
-   * override the stored/URL state.
+   * `JSON_VALUE(properties, '$.internal') IS NULL`.
+   *
+   * Passing a boolean forces what this tracker stamps and turns off the
+   * automatic behaviour. `?internal=1` is still recorded while forced, so
+   * removing the override later picks the mark back up — but a site that
+   * always passes `false` will never stamp anything. Leave it undefined
+   * unless you specifically need to force the state (SSR, tests).
    */
   internal?: boolean
   /** Minutes of inactivity before a new session id is minted. Default 30. */
@@ -167,8 +172,7 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
   }
 
   function internalFlag(): boolean {
-    if (options.internal !== undefined) return options.internal
-    if (typeof window === 'undefined') return false
+    if (typeof window === 'undefined') return options.internal ?? false
     const store = safeStorage('local')
     try {
       const param = new URLSearchParams(window.location.search).get('internal')
@@ -177,7 +181,11 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
     } catch {
       /* a malformed URL never breaks tracking */
     }
-    return read(store, INTERNAL_KEY) === '1'
+    // The param is recorded above even when the option overrides the result.
+    // Returning early instead would make `internal={false}` — the obvious way
+    // to write a server-rendered default — turn ?internal=1 into a permanent
+    // no-op for that site, and nothing about the failure is observable.
+    return options.internal ?? read(store, INTERNAL_KEY) === '1'
   }
 
   function build(eventName: string, properties?: Record<string, unknown>): AnalyticsEvent {
