@@ -100,11 +100,14 @@ webhook ──┘                                                   ▲
 ### 1. Provision the tables
 
 ```bash
-./scripts/provision.sh my-gcp-project
+./scripts/provision.sh my-gcp-project --writer analytics-writer@my-gcp-project.iam.gserviceaccount.com
 ```
 
 Creates `analytics` and `analytics_dev`, each with an `events` table
-day-partitioned on `timestamp`. Safe to re-run.
+day-partitioned on `timestamp`. With `--writer`, grants that service account
+`roles/bigquery.dataEditor` (insert events) and `roles/bigquery.jobUser` (run
+queries, e.g. a freshness check) on the project. Both are project-wide, so
+keep analytics in its own GCP project. Safe to re-run.
 
 ### 2. Mount an ingestion endpoint
 

@@ -19,6 +19,12 @@ minor versions may still change the public API; the entries say so when they do.
   mark. Checked per event, so the param works on client-side navigations.
   A new `internal` option on `createBrowserTracker` overrides both, and a
   caller-supplied `internal` property always wins over the stamp.
+- **`provision.sh --writer <sa-email>`.** Also grants the app's writer
+  service account `roles/bigquery.dataEditor` (insert) and
+  `roles/bigquery.jobUser` (query) on the project. Without jobUser the account
+  can write events but cannot query them, so a freshness check running as it
+  fails. Existing projects: re-run `provision.sh` with `--writer`; it is
+  idempotent.
 
 ## 0.3.1 — 2026-08-11
 
