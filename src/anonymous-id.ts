@@ -21,6 +21,7 @@ export function isAnonymousId(value: unknown): value is string {
 /**
  * The visitor's anonymous id from an incoming request's cookies, or `null`
  * when the request has none or it is not one the tracker could have minted.
+ * Needs the browser tracker's `anonymousIdCookie` option left on (the default).
  *
  * Use it to put the visitor on a server-side event, so the event joins the
  * page views before it:
@@ -40,8 +41,10 @@ export function readAnonymousId(request: Request): string | null {
   for (const pair of header.split(';')) {
     const eq = pair.indexOf('=')
     if (eq === -1 || pair.slice(0, eq).trim() !== ANONYMOUS_ID_COOKIE) continue
+    // A header can carry the name twice (a stale cookie at another path or
+    // domain); a malformed one must not hide a valid one after it.
     const value = pair.slice(eq + 1).trim()
-    return isAnonymousId(value) ? value : null
+    if (isAnonymousId(value)) return value
   }
   return null
 }

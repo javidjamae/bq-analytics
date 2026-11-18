@@ -15,6 +15,12 @@
 --   - Test rows are left out. identityViewDDL({ ..., includeTest: true })
 --     renders a variant that keeps them.
 --
+-- Cost: the view reads four narrow columns (anonymous_id, user_id, timestamp,
+-- is_test) across the table's whole history, because a link made a year ago
+-- still holds. A query that joins through it pays for that scan on top of its
+-- own date window. On a large table, materialise it on a schedule
+-- (CREATE TABLE ... AS SELECT * FROM the view) and join to that instead.
+--
 -- scripts/provision.sh creates this next to each events table it creates,
 -- with the names qualified for your project. By hand:
 --

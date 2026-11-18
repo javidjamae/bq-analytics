@@ -27,7 +27,7 @@ visitor attributed to the wrong browser history.
 The cookie reaches any request to the same origin. The flows below are the
 ones that leave the site, or the device, and lose it unless you carry it.
 
-## A redirect to another origin and back
+## Cross-Origin Redirects
 
 An OAuth or single sign-on login sends the browser to the provider and back to
 your callback. The cookie is `SameSite=Lax`, so a browser sends it on the
@@ -46,7 +46,7 @@ const { anonymous_id } = verify(params.state)
 await analytics.track('signed_in', {}, { user_id: user.id, anonymous_id })
 ```
 
-## A hosted checkout
+## Hosted Checkout
 
 The page that starts a hosted checkout runs on your origin, but the payment
 webhook that confirms it comes from the payment provider and has never seen
@@ -72,7 +72,7 @@ Send the webhook's event with the shared secret (or straight to the sink from
 the service that owns the credentials). It is the row you would bet money on,
 so it should not come through the public endpoint.
 
-## A link opened on another device
+## Cross-Device Links
 
 A link in an email (a sign-in link, an invite, a reminder about an abandoned
 cart) is often opened on a different device than the one that asked for it.
@@ -109,12 +109,16 @@ function visitorFromLink(url: URL): string | null {
 const anonymous_id = visitorFromLink(new URL(request.url)) ?? readAnonymousId(request)
 ```
 
-The signature stops anyone from attaching a stranger's browsing to their own
-account by editing the link. The new device keeps its own id for its own page
+The signature stops a recipient from editing the link to carry a different
+id. It cannot make anonymous ids secret: any browser can send any id it knows,
+in a link, a cookie or an event body. What keeps one person's browsing off
+another's account is that the ids are random UUIDs nobody else sees, so never
+put them anywhere public (a URL that gets shared, a page others can read). The
+new device keeps its own id for its own page
 views; once the user signs in there, the identity view links that id to the
 same user too.
 
-## Joining it up
+## Identity View
 
 Every row that carries both ids links the browser to the account, and the
 identity view (`sql/identity.sql`, created by `scripts/provision.sh`) turns
@@ -125,12 +129,14 @@ event to a person through it.
 Two things the view does on purpose: a browser linked to more than one user
 (a shared computer) is left out, because a wrong attribution is worse than a
 missing one; and one user can have several browsers, so count people with
-`COUNT(DISTINCT user_id)`.
+`COUNT(DISTINCT user_id)`. The first rule also bounds what a forged link can
+do: a browser claimed by two accounts drops out rather than moving to the
+second one.
 
-## Who is signed in on browser events
+## Server-Side User Resolution
 
-The ingest handler can decide that for you from your own session, so a browser
-event's `user_id` is never whatever the page claimed:
+The ingest handler can decide who is signed in on browser events from your own
+session, so a browser event's `user_id` is never whatever the page claimed:
 
 ```ts
 export const POST = createIngestHandler({

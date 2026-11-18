@@ -374,3 +374,51 @@ test('the resolver is not called for a request that fails validation', async () 
   assert.equal((await handler(post({ events: [{ properties: {} }] }))).status, 400)
   assert.equal(calls, 0)
 })
+
+test('a numeric user id from the resolver is stored as its string', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    // An untyped session whose primary key is a number.
+    resolveUserId: () => 42 as unknown as string,
+  })
+
+  await handler(post({ events: [{ event_name: 'a' }] }))
+
+  assert.equal(sink.events[0]?.user_id, '42')
+})
+
+test('a resolver answer of any other type is reported, not silently dropped', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    onError,
+    resolveUserId: () => ({ id: 'u' }) as unknown as string,
+  })
+
+  const response = await handler(post({ events: [{ event_name: 'a' }] }))
+
+  assert.equal(response.status, 202)
+  assert.equal(sink.events[0]?.user_id, null)
+  assert.deepEqual(messages, ['resolveUserId returned a object, expected a string or null'])
+})
+
+test('an Infinity time limit means no limit, not an instant timeout', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    onError,
+    resolveUserIdTimeoutMs: Infinity,
+    resolveUserId: () => new Promise((resolve) => setTimeout(() => resolve('slow-but-fine'), 30)),
+  })
+
+  await handler(post({ events: [{ event_name: 'a' }] }))
+
+  assert.equal(sink.events[0]?.user_id, 'slow-but-fine')
+  assert.deepEqual(messages, [])
+})

@@ -15,15 +15,17 @@ minor versions may still change the public API; the entries say so when they do.
   (secretless) requests it decides the signed-in user from your own session,
   after the body is validated; its answer replaces any `user_id` the body
   carried, and `null` writes the events signed out. It has a time limit
-  (`resolveUserIdTimeoutMs`, default 1000); a resolver that times out or
-  throws writes the events signed out and reports through `onError`, never
-  dropping them. Secret-authenticated requests are unchanged, and without the
+  (`resolveUserIdTimeoutMs`, default 1000); a resolver that times out, throws
+  or returns something other than a string, number or null writes the events
+  signed out and reports through `onError`, never dropping them. A numeric id
+  is stored as its string. Secret-authenticated requests are unchanged, and without the
   option the handler behaves exactly as before.
 - **`readAnonymousId(request)` in `bq-analytics/server`.** Returns the browser
   tracker's `anonymous_id` from a request's cookies, validated, or `null`, so
   server-side events can carry the visitor. To make that possible the browser
   tracker now also writes its id to a first-party cookie, `ba_anonymous_id`
-  (`Path=/`, `SameSite=Lax`, one year, `Secure` on https). New docs page,
+  (`Path=/`, `SameSite=Lax`, one year, `Secure` on https); the new
+  `anonymousIdCookie: false` option turns that off. New docs page,
   [Carrying the visitor through](docs/carrying-the-visitor.md), covers
   redirects, hosted checkouts and links opened on another device.
 - **The identity view.** `sql/identity.sql`, and `identityViewDDL()` from the

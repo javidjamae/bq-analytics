@@ -170,8 +170,9 @@ export const POST = createIngestHandler({
 
 It runs once per public request, after the body is validated. Its answer is
 every event's `user_id`, and whatever the body claimed is discarded; `null`
-means signed out. A resolver that throws or runs past its time limit writes the
-events signed out and reports through `onError`, so a slow session store never
+means signed out, and a numeric id is stored as its string. A resolver that
+throws, runs past its time limit or returns anything else writes the events
+signed out and reports through `onError`, so a slow session store never
 costs you the event. Secret-bearing requests skip it and keep their own
 `user_id`. Without the option, nothing changes.
 
@@ -270,6 +271,7 @@ webhook, a background job) know the user. Three pieces join them:
    visitor's id on a server request, or `null`. The browser tracker mirrors
    its id into a first-party `ba_anonymous_id` cookie for this. Put it on
    server-side events so they join the page views before them.
+   Turn the cookie off with `createBrowserTracker({ anonymousIdCookie: false })`.
    [Carrying the visitor through](docs/carrying-the-visitor.md) covers the
    flows that lose it: a redirect to another origin and back, a hosted
    checkout, and a link opened on another device.
@@ -288,6 +290,9 @@ The view's rules:
 - It shows the browser was later used by that account, not that the anonymous
   activity came first. Compare timestamps when order matters.
 - Test rows are left out (`includeTest: true` keeps them).
+- It reads `anonymous_id`, `user_id`, `timestamp` and `is_test` across the
+  table's whole history, so a query joined through it pays for that scan too.
+  On a large table, materialise it on a schedule and join to the copy.
 
 To count a visitor's signed-out events under the account they became:
 

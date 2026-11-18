@@ -22,6 +22,14 @@ export interface BrowserTrackerOptions {
    * unless you specifically need to force the state (SSR, tests).
    */
   internal?: boolean
+  /**
+   * Mirror the anonymous id into a first-party `ba_anonymous_id` cookie
+   * (one year, SameSite=Lax), so `readAnonymousId` in bq-analytics/server can
+   * put the visitor on server-side events. Default true. Turn it off if your
+   * consent setup must not set cookies; server events then need the id passed
+   * some other way (`anonymousId()` in a request body, say).
+   */
+  anonymousIdCookie?: boolean
   /** Minutes of inactivity before a new session id is minted. Default 30. */
   sessionTimeoutMinutes?: number
   /** Called on delivery failure. Default: console.error. */
@@ -62,7 +70,8 @@ function safeStorage(kind: 'local' | 'session'): Storage | null {
  * Mirrors the anonymous id into a first-party cookie so the server can read the
  * visitor off an ordinary request (`readAnonymousId` in bq-analytics/server),
  * including a top-level navigation back from another origin, which Lax allows.
- * Rewritten on every event, which keeps the expiry rolling.
+ * Written once per tracker and again whenever the id changes, which keeps the
+ * expiry rolling from the last page load.
  */
 function mirrorToCookie(id: string): void {
   try {
@@ -92,6 +101,7 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
     url,
     source = 'web',
     sessionTimeoutMinutes = 30,
+    anonymousIdCookie = true,
     onError = (error: Error) =>
       console.error(`[bq-analytics] event not delivered: ${error.message}`),
   } = options
@@ -110,6 +120,8 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
     else memory.set(key, value)
   }
 
+  let mirrored: string | null = null
+
   function anonymousId(): string {
     const store = safeStorage('local')
     let id = read(store, ANON_KEY)
@@ -117,7 +129,10 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
       id = uuid()
       write(store, ANON_KEY, id)
     }
-    if (typeof document !== 'undefined') mirrorToCookie(id)
+    if (anonymousIdCookie && id !== mirrored && typeof document !== 'undefined') {
+      mirrorToCookie(id)
+      mirrored = id
+    }
     return id
   }
 

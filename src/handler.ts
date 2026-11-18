@@ -54,7 +54,11 @@ export interface IngestHandlerOptions {
    *   resolveUserId: async (request) => (await getSession(request))?.userId ?? null
    */
   resolveUserId?: (request: Request) => string | null | undefined | Promise<string | null | undefined>
-  /** How long `resolveUserId` may take before the events are written signed out. Default 1000. */
+  /**
+   * How long `resolveUserId` may take before the events are written signed
+   * out. Default 1000. Capped at setTimeout's limit (about 24.8 days), so
+   * `Infinity` means no practical limit rather than an instant timeout.
+   */
   resolveUserIdTimeoutMs?: number
 }
 
@@ -92,9 +96,12 @@ export function createIngestHandler(options: IngestHandlerOptions) {
     resolveUserIdTimeoutMs = 1000,
   } = options
 
-  function report(error: Error, events: AnalyticsEvent[]): void {
+  // setTimeout fires after 1ms for anything above 2^31-1, Infinity included.
+  const resolveTimeout = Math.min(resolveUserIdTimeoutMs, 2_147_483_647)
+
+  function report(error: Error, events: AnalyticsEvent[], consolePrefix = ''): void {
     if (onError) onError(error, { sink: sink.name, events })
-    else console.error(`[bq-analytics] ${error.message}`)
+    else console.error(`[bq-analytics] ${consolePrefix}${error.message}`)
   }
 
   /** The resolver's answer, or null when it fails or runs out of time. */
@@ -110,14 +117,20 @@ export function createIngestHandler(options: IngestHandlerOptions) {
         // Wrapped so a resolver that throws synchronously is caught here too.
         Promise.resolve().then(() => resolver(request)),
         new Promise<typeof timedOut>((resolve) => {
-          timer = setTimeout(() => resolve(timedOut), resolveUserIdTimeoutMs)
+          timer = setTimeout(() => resolve(timedOut), resolveTimeout)
         }),
       ])
       if (answer === timedOut) {
         report(new Error(`resolveUserId timed out after ${resolveUserIdTimeoutMs}ms`), events)
         return null
       }
-      return typeof answer === 'string' && answer !== '' ? answer : null
+      if (answer === null || answer === undefined || answer === '') return null
+      if (typeof answer === 'string') return answer
+      // A numeric primary key is a user id too; anything else is a bug in the
+      // resolver, and silently writing it signed out would hide that.
+      if (typeof answer === 'number' || typeof answer === 'bigint') return String(answer)
+      report(new Error(`resolveUserId returned a ${typeof answer}, expected a string or null`), events)
+      return null
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause))
       report(new Error(`resolveUserId failed: ${error.message}`, { cause: error }), events)
@@ -182,8 +195,7 @@ export function createIngestHandler(options: IngestHandlerOptions) {
       waitUntil(
         write.catch((cause) => {
           const error = cause instanceof Error ? cause : new Error(String(cause))
-          if (onError) onError(error, { sink: sink.name, events: stamped })
-          else console.error(`[bq-analytics] ingest write failed: ${error.message}`)
+          report(error, stamped, 'ingest write failed: ')
         })
       )
       return Response.json({ accepted: stamped.length }, { status: 202 })
@@ -193,8 +205,7 @@ export function createIngestHandler(options: IngestHandlerOptions) {
       await write
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause))
-      if (onError) onError(error, { sink: sink.name, events: stamped })
-      else console.error(`[bq-analytics] ingest write failed: ${error.message}`)
+      report(error, stamped, 'ingest write failed: ')
       // The caller is told the truth. Its own tracker decides whether to retry
       // or drop; that choice does not belong to the collector.
       return Response.json({ error: 'write failed' }, { status: 502 })
