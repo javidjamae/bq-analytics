@@ -35,7 +35,7 @@ registry involved.
 ```jsonc
 // package.json
 "dependencies": {
-  "bq-analytics": "https://github.com/javidjamae/bq-analytics/releases/download/v0.3.1/bq-analytics-0.3.1.tgz"
+  "bq-analytics": "https://github.com/javidjamae/bq-analytics/releases/download/v0.4.0/bq-analytics-0.4.0.tgz"
 }
 ```
 
