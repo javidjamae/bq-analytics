@@ -199,9 +199,19 @@ test('refuses to build an unauthenticated endpoint in production', () => {
 
 // --- resolveUserId -------------------------------------------------------
 
-function quietReporter(): { messages: string[]; onError: (error: Error) => void } {
+function quietReporter(): {
+  messages: string[]
+  onError: (error: Error, context: { events: AnalyticsEvent[] }) => void
+} {
   const messages: string[] = []
-  return { messages, onError: (error) => messages.push(error.message) }
+  return {
+    messages,
+    onError: (error, { events }) => {
+      // The events were written signed out, so none are reported as lost.
+      assert.deepEqual(events, [], 'a resolver failure must not look like lost events')
+      messages.push(error.message)
+    },
+  }
 }
 
 test('no resolver: public and trusted rows are exactly what they were before the option existed', async () => {
@@ -290,6 +300,23 @@ test('a resolver that outlasts its time limit writes the row signed out and repo
   assert.equal(sink.events.length, 1)
   assert.equal(sink.events[0]?.user_id, null)
   assert.deepEqual(messages, ['resolveUserId timed out after 20ms'])
+})
+
+test('a NaN, zero or negative time limit falls back to the default', async () => {
+  for (const resolveUserIdTimeoutMs of [Number.NaN, 0, -5]) {
+    const sink = recordingSink()
+    const { messages, onError } = quietReporter()
+    const handler = createIngestHandler({
+      sink,
+      allowPublic: true,
+      onError,
+      resolveUserIdTimeoutMs,
+      resolveUserId: () => new Promise((resolve) => setTimeout(() => resolve('u'), 20)),
+    })
+    await handler(post({ events: [{ event_name: 'a' }] }))
+    assert.equal(sink.events[0]?.user_id, 'u', String(resolveUserIdTimeoutMs))
+    assert.deepEqual(messages, [])
+  }
 })
 
 test('the resolver time limit defaults to one second', async () => {

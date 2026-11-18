@@ -26,8 +26,9 @@ export interface BrowserTrackerOptions {
    * Mirror the anonymous id into a first-party `ba_anonymous_id` cookie
    * (one year, SameSite=Lax), so `readAnonymousId` in bq-analytics/server can
    * put the visitor on server-side events. Default true. Turn it off if your
-   * consent setup must not set cookies; server events then need the id passed
-   * some other way (`anonymousId()` in a request body, say).
+   * consent setup must not set cookies (it also expires one an earlier
+   * page set); server events then need the id passed some other way
+   * (`anonymousId()` in a request body, say).
    */
   anonymousIdCookie?: boolean
   /** Minutes of inactivity before a new session id is minted. Default 30. */
@@ -73,10 +74,14 @@ function safeStorage(kind: 'local' | 'session'): Storage | null {
  * Written once per tracker and again whenever the id changes, which keeps the
  * expiry rolling from the last page load.
  */
-function mirrorToCookie(id: string): void {
+function mirrorToCookie(id: string | null): void {
   try {
     const secure = window.location.protocol === 'https:' ? '; Secure' : ''
-    document.cookie = `${ANON_KEY}=${encodeURIComponent(id)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`
+    // null expires it: turning the option off must not leave a year-long
+    // cookie behind for the server to keep reading.
+    const value = id === null ? '' : encodeURIComponent(id)
+    const maxAge = id === null ? 0 : 31536000
+    document.cookie = `${ANON_KEY}=${value}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`
   } catch {
     // Sandboxed frames and some privacy modes throw on cookie writes. The id
     // still goes out on every event body; only the server-side read is lost.
@@ -120,7 +125,7 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
     else memory.set(key, value)
   }
 
-  let mirrored: string | null = null
+  let mirrored: string | null | undefined
 
   function anonymousId(): string {
     const store = safeStorage('local')
@@ -129,9 +134,12 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
       id = uuid()
       write(store, ANON_KEY, id)
     }
-    if (anonymousIdCookie && id !== mirrored && typeof document !== 'undefined') {
-      mirrorToCookie(id)
-      mirrored = id
+    // Once per tracker, and again if the id changes. With the cookie turned
+    // off, the one write expires any cookie an earlier page left behind.
+    const wanted = anonymousIdCookie ? id : null
+    if (wanted !== mirrored && typeof document !== 'undefined') {
+      mirrorToCookie(wanted)
+      mirrored = wanted
     }
     return id
   }

@@ -16,7 +16,6 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildRow, createIngestHandler, readAnonymousId } from '../../dist/server.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const port = Number(process.env.HARNESS_PORT ?? 4319)
@@ -36,17 +35,30 @@ function sessionUser(request) {
   return match ? match[1] : null
 }
 
-const ingest = createIngestHandler({
-  sink: {
-    name: 'harness-rows',
-    async send(events) {
-      rows.push(...events.map(buildRow))
+// Loaded lazily so a missing build reaches the "run npm run build first"
+// answer below instead of crashing the harness before it can say so.
+let library
+async function loadLibrary() {
+  library ??= await import('../../dist/server.js')
+  return library
+}
+
+let ingestHandler
+async function ingest(request) {
+  const { buildRow, createIngestHandler } = await loadLibrary()
+  ingestHandler ??= createIngestHandler({
+    sink: {
+      name: 'harness-rows',
+      async send(events) {
+        rows.push(...events.map(buildRow))
+      },
     },
-  },
-  secret: IDENTITY_SECRET,
-  allowPublic: true,
-  resolveUserId: (request) => sessionUser(request),
-})
+    secret: IDENTITY_SECRET,
+    allowPublic: true,
+    resolveUserId: (request) => sessionUser(request),
+  })
+  return ingestHandler(request)
+}
 
 /** node:http to the web-standard Request the library speaks. */
 function toRequest(req, body) {
@@ -115,6 +127,15 @@ const server = createServer(async (req, res) => {
     return
   }
 
+  if (pathname.startsWith('/identity/')) {
+    try {
+      await loadLibrary()
+    } catch {
+      res.writeHead(500).end('harness could not load dist/server.js — run "npm run build" first')
+      return
+    }
+  }
+
   if (req.method === 'POST' && pathname === '/identity/ingest') {
     await send(res, await ingest(toRequest(req, await readBody(req))))
     return
@@ -132,7 +153,7 @@ const server = createServer(async (req, res) => {
     const event = {
       event_name: 'purchase_completed',
       user_id: sessionUser(request),
-      anonymous_id: readAnonymousId(request),
+      anonymous_id: (await loadLibrary()).readAnonymousId(request),
       source: 'api',
       properties: { plan: 'pro' },
     }

@@ -185,14 +185,15 @@ test('a cookie write that throws never breaks tracking', async () => {
   assert.ok(event.anonymous_id)
 })
 
-function countCookieWrites(): { count: number } {
-  const counter = { count: 0 }
+function countCookieWrites(): { count: number; values: string[] } {
+  const counter = { count: 0, values: [] as string[] }
   Object.defineProperty(globalThis, 'document', {
     value: {
       title: 'Page',
       referrer: '',
-      set cookie(_value: string) {
+      set cookie(value: string) {
         counter.count += 1
+        counter.values.push(value)
       },
     },
     configurable: true,
@@ -210,12 +211,13 @@ test('the cookie is written once per tracker, not on every event', () => {
   assert.equal(writes.count, 1)
 })
 
-test('anonymousIdCookie: false sets no cookie and still tracks', async () => {
+test('anonymousIdCookie: false sets no id, expires an old cookie, and still tracks', async () => {
   const writes = countCookieWrites()
   const tracker = createBrowserTracker({ url: '/api/events', anonymousIdCookie: false })
   tracker.track('no_cookie')
+  tracker.track('still_no_cookie')
   const event = await lastEvent()
-  assert.equal(event.event_name, 'no_cookie')
+  assert.equal(event.event_name, 'still_no_cookie')
   assert.ok(event.anonymous_id)
-  assert.equal(writes.count, 0)
+  assert.deepEqual(writes.values, ['ba_anonymous_id=; Path=/; Max-Age=0; SameSite=Lax'])
 })

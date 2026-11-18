@@ -1,6 +1,6 @@
-# Carrying the visitor through
+# Visitor Handoff
 
-A signup or a purchase only joins the page views before it if the server-side
+Carrying the visitor through to the server. A signup or a purchase only joins the page views before it if the server-side
 event carries the visitor's `anonymous_id`. The browser tracker keeps that id
 in localStorage, which a server never sees, so it also mirrors it into a
 first-party cookie, `ba_anonymous_id`. `readAnonymousId` reads it back:

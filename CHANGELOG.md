@@ -26,14 +26,15 @@ minor versions may still change the public API; the entries say so when they do.
   tracker now also writes its id to a first-party cookie, `ba_anonymous_id`
   (`Path=/`, `SameSite=Lax`, one year, `Secure` on https); the new
   `anonymousIdCookie: false` option turns that off. New docs page,
-  [Carrying the visitor through](docs/carrying-the-visitor.md), covers
+  [Visitor Handoff](docs/carrying-the-visitor.md), covers
   redirects, hosted checkouts and links opened on another device.
 - **The identity view.** `sql/identity.sql`, and `identityViewDDL()` from the
   root entry to render it for any project, dataset, table and view name: one
   row per (`anonymous_id`, `user_id`) with `first_linked_at`. A browser linked
   to more than one user is left out, one user may have several browsers, and
   test rows are left out unless `includeTest` is set. `provision.sh` now
-  creates it as `identity` next to each events table; existing projects can
+  creates it as `identity` next to each events table (the `analytics_dev` one
+  keeps test rows, since local traffic is all marked test); existing projects can
   re-run it (it is idempotent). `funnel.sql`, `attribution.sql` and
   `active-users.sql` carry a note on joining through it.
 - **Internal-traffic flag in the browser tracker.** Visit any page once with

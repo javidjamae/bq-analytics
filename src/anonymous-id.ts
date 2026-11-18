@@ -9,9 +9,10 @@
 export const ANONYMOUS_ID_COOKIE = 'ba_anonymous_id' // ANON_KEY in src/browser.ts
 
 // The two shapes `src/browser.ts` mints: crypto.randomUUID(), and the
-// `<ms-hex>-<random-hex>` fallback for browsers without it.
+// `<ms-hex>-<random-hex>` fallback for browsers without it. Date.now() has
+// been 11 hex digits since 2004, so a short first part is not one of ours.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const FALLBACK = /^[0-9a-f]{1,16}-[0-9a-f]{0,8}$/
+const FALLBACK = /^[0-9a-f]{10,16}-[0-9a-f]{1,8}$/
 
 /** True when `value` has the shape the browser tracker mints. */
 export function isAnonymousId(value: unknown): value is string {

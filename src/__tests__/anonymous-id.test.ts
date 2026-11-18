@@ -40,6 +40,9 @@ test('malformed: anything the tracker could not have minted is null', () => {
     "' OR 1=1 --",
     '%3Cscript%3E',
     'a'.repeat(400),
+    '0-',
+    'a-',
+    '18c2f3a4b5d-',
   ]) {
     assert.equal(readAnonymousId(withCookie(`ba_anonymous_id=${value}`)), null, value)
   }

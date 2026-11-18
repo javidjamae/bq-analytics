@@ -9,7 +9,9 @@
 # every step is create-if-missing, and every grant is an idempotent binding.
 #
 # Each dataset also gets `identity`, the view from sql/identity.sql (which
-# anonymous_id became which user_id). Create-if-missing like the rest, so a
+# anonymous_id became which user_id). The analytics_dev one keeps is_test
+# rows, since local and preview traffic is all marked test and the view would
+# otherwise always be empty there. Create-if-missing like the rest, so a
 # view you changed by hand is left alone; drop it and re-run to pick up a newer
 # definition.
 #
@@ -86,9 +88,11 @@ for DATASET in analytics analytics_dev; do
     echo "creating view $DATASET.identity"
     # The file names `analytics.events`; qualify both names for this project
     # and dataset, so the view never depends on a default project.
+    KEEP_TEST=()
+    [[ "$DATASET" == analytics_dev ]] && KEEP_TEST=(-e '/^    AND NOT is_test$/d')
     sed -e "s|\`analytics\.events\`|\`$PROJECT.$DATASET.events\`|g" \
         -e "s|\`analytics\.identity\`|\`$PROJECT.$DATASET.identity\`|g" \
-        "$IDENTITY_SQL" \
+        ${KEEP_TEST[@]+"${KEEP_TEST[@]}"} "$IDENTITY_SQL" \
       | bq --project_id="$PROJECT" query --use_legacy_sql=false >/dev/null
   fi
 done

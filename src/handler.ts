@@ -14,7 +14,11 @@ export interface IngestHandlerOptions {
   source?: string
   /** Cap on events per request, to bound the cost of a bad caller. */
   maxEvents?: number
-  /** Where write failures are reported. Default: console.error. */
+  /**
+   * Where write failures are reported. Default: console.error. Also told when
+   * `resolveUserId` fails, with an empty `events` list, since those events
+   * were still written.
+   */
   onError?: ErrorReporter
   /**
    * Hand the write to a platform keep-alive (Vercel's `waitUntil`) so the
@@ -46,9 +50,15 @@ export interface IngestHandlerOptions {
    * carried is discarded: a public endpoint cannot trust a client to say who
    * it is. Return `null` for a signed-out request.
    *
-   * A resolver that throws or takes longer than `resolveUserIdTimeoutMs`
-   * writes the events signed out and is reported through `onError`; the
-   * events are never dropped for it. Requests that present the secret are
+   * A resolver that throws, returns something other than a string, number or
+   * null, or takes longer than `resolveUserIdTimeoutMs` writes the events
+   * signed out and is reported through `onError` with an empty `events` list
+   * (nothing was lost, so there is nothing to retry). A numeric id is stored
+   * as its string.
+   *
+   * Mount the endpoint on the page's own origin: the browser's fetch fallback
+   * sends cookies only same-origin, so a cross-origin endpoint would see
+   * beacon-delivered events signed in and fetch-delivered ones signed out. Requests that present the secret are
    * trusted to name their own user and never reach the resolver.
    *
    *   resolveUserId: async (request) => (await getSession(request))?.userId ?? null
@@ -96,20 +106,28 @@ export function createIngestHandler(options: IngestHandlerOptions) {
     resolveUserIdTimeoutMs = 1000,
   } = options
 
-  // setTimeout fires after 1ms for anything above 2^31-1, Infinity included.
-  const resolveTimeout = Math.min(resolveUserIdTimeoutMs, 2_147_483_647)
+  // setTimeout fires after 1ms for anything above 2^31-1 (Infinity included)
+  // and for NaN, so cap the one and default the other.
+  const resolveTimeout =
+    Number.isNaN(resolveUserIdTimeoutMs) || resolveUserIdTimeoutMs <= 0
+      ? 1000
+      : Math.min(resolveUserIdTimeoutMs, 2_147_483_647)
 
   function report(error: Error, events: AnalyticsEvent[], consolePrefix = ''): void {
     if (onError) onError(error, { sink: sink.name, events })
     else console.error(`[bq-analytics] ${consolePrefix}${error.message}`)
   }
 
-  /** The resolver's answer, or null when it fails or runs out of time. */
+  /**
+   * The resolver's answer, or null when it fails or runs out of time. Its
+   * failures reach onError with no events: the events are still written
+   * (signed out), so nothing about them was lost.
+   */
   async function resolveUser(
     resolver: NonNullable<IngestHandlerOptions['resolveUserId']>,
-    request: Request,
-    events: AnalyticsEvent[]
+    request: Request
   ): Promise<string | null> {
+    const events: AnalyticsEvent[] = []
     const timedOut = Symbol('timed out')
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
@@ -183,7 +201,7 @@ export function createIngestHandler(options: IngestHandlerOptions) {
     if (trusted) {
       stamped = events.map((e) => ({ ...e, source: e.source ?? body.source ?? source }))
     } else if (resolveUserId) {
-      const userId = await resolveUser(resolveUserId, request, events)
+      const userId = await resolveUser(resolveUserId, request)
       stamped = events.map((e) => ({ ...e, source: publicSource, user_id: userId }))
     } else {
       stamped = events.map((e) => ({ ...e, source: publicSource }))

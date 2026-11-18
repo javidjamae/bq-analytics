@@ -105,7 +105,8 @@ webhook ──┘                                                   ▲
 
 Creates `analytics` and `analytics_dev`, each with an `events` table
 day-partitioned on `timestamp` and an `identity` view over it (see
-[Identity](#identity)). With `--writer`, grants that service account
+[Identity](#identity); the `analytics_dev` one keeps test rows, since local
+traffic is all marked test). With `--writer`, grants that service account
 `roles/bigquery.dataEditor` (insert events) and `roles/bigquery.jobUser` (run
 queries, e.g. a freshness check) on the project. Both are project-wide, so
 keep analytics in its own GCP project. Safe to re-run.
@@ -272,7 +273,7 @@ webhook, a background job) know the user. Three pieces join them:
    its id into a first-party `ba_anonymous_id` cookie for this. Put it on
    server-side events so they join the page views before them.
    Turn the cookie off with `createBrowserTracker({ anonymousIdCookie: false })`.
-   [Carrying the visitor through](docs/carrying-the-visitor.md) covers the
+   [Visitor Handoff](docs/carrying-the-visitor.md) covers the
    flows that lose it: a redirect to another origin and back, a hosted
    checkout, and a link opened on another device.
 3. **The identity view**, one row per (`anonymous_id`, `user_id`) with
