@@ -196,3 +196,315 @@ test('refuses to build an unauthenticated endpoint in production', () => {
     process.env.NODE_ENV = previous
   }
 })
+
+// --- resolveUserId -------------------------------------------------------
+
+function quietReporter(): {
+  messages: string[]
+  onError: (error: Error, context: { events: AnalyticsEvent[] }) => void
+} {
+  const messages: string[] = []
+  return {
+    messages,
+    onError: (error, { events }) => {
+      // The events were written signed out, so none are reported as lost.
+      assert.deepEqual(events, [], 'a resolver failure must not look like lost events')
+      messages.push(error.message)
+    },
+  }
+}
+
+test('no resolver: public and trusted rows are exactly what they were before the option existed', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({ sink, secret: SECRET, allowPublic: true, source: 'api' })
+
+  await handler(post({ events: [{ event_name: 'a', user_id: 'from-body', anonymous_id: 'anon' }] }))
+  await handler(post({ events: [{ event_name: 'b' }] }))
+  await handler(post({ events: [{ event_name: 'c', user_id: 'server-user' }] }, SECRET))
+
+  // deepEqual on the whole event: no user_id key appears where the body had
+  // none, and a body-supplied one passes through untouched.
+  assert.deepEqual(sink.events, [
+    { event_name: 'a', user_id: 'from-body', anonymous_id: 'anon', source: 'browser' },
+    { event_name: 'b', source: 'browser' },
+    { event_name: 'c', user_id: 'server-user', source: 'api' },
+  ])
+})
+
+test('resolveUserId stamps its answer on every event of a public request', async () => {
+  const sink = recordingSink()
+  const seen: Request[] = []
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    resolveUserId: async (request) => {
+      seen.push(request)
+      return request.headers.get('cookie') === 'session=abc' ? 'user-1' : null
+    },
+  })
+
+  const request = new Request('https://example.test/api/events', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: 'session=abc' },
+    body: JSON.stringify({ events: [{ event_name: 'a' }, { event_name: 'b' }] }),
+  })
+  const response = await handler(request)
+
+  assert.equal(response.status, 202)
+  assert.equal(seen.length, 1, 'called once per request, not once per event')
+  assert.equal(seen[0], request, 'receives the incoming request')
+  assert.deepEqual(
+    sink.events.map((e) => e.user_id),
+    ['user-1', 'user-1']
+  )
+})
+
+test('resolveUserId discards a user_id the body supplied', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({ sink, allowPublic: true, resolveUserId: () => 'real-user' })
+
+  await handler(post({ events: [{ event_name: 'a', user_id: 'forged-user' }] }))
+
+  assert.equal(sink.events[0]?.user_id, 'real-user')
+})
+
+test('a signed-out request writes user_id null, even when the body named a user', async () => {
+  const sink = recordingSink()
+  for (const answer of [null, undefined, '']) {
+    const handler = createIngestHandler({ sink, allowPublic: true, resolveUserId: () => answer })
+    await handler(post({ events: [{ event_name: 'a', user_id: 'forged-user' }] }))
+  }
+
+  assert.deepEqual(
+    sink.events.map((e) => e.user_id),
+    [null, null, null]
+  )
+})
+
+test('a resolver that outlasts its time limit writes the row signed out and reports it', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    onError,
+    resolveUserIdTimeoutMs: 20,
+    resolveUserId: () => new Promise((resolve) => setTimeout(() => resolve('too-late'), 200)),
+  })
+
+  const started = Date.now()
+  const response = await handler(post({ events: [{ event_name: 'a', user_id: 'forged-user' }] }))
+
+  assert.equal(response.status, 202)
+  assert.ok(Date.now() - started < 150, 'the handler waited past the time limit')
+  assert.equal(sink.events.length, 1)
+  assert.equal(sink.events[0]?.user_id, null)
+  assert.deepEqual(messages, ['resolveUserId timed out after 20ms'])
+})
+
+test('a NaN, zero or negative time limit falls back to the default', async () => {
+  for (const resolveUserIdTimeoutMs of [Number.NaN, 0, -5]) {
+    const sink = recordingSink()
+    const { messages, onError } = quietReporter()
+    const handler = createIngestHandler({
+      sink,
+      allowPublic: true,
+      onError,
+      resolveUserIdTimeoutMs,
+      resolveUserId: () => new Promise((resolve) => setTimeout(() => resolve('u'), 20)),
+    })
+    await handler(post({ events: [{ event_name: 'a' }] }))
+    assert.equal(sink.events[0]?.user_id, 'u', String(resolveUserIdTimeoutMs))
+    assert.deepEqual(messages, [])
+  }
+})
+
+test('the resolver time limit defaults to one second', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    onError,
+    resolveUserId: () => new Promise(() => {}),
+  })
+
+  await handler(post({ events: [{ event_name: 'a' }] }))
+
+  assert.equal(sink.events[0]?.user_id, null)
+  assert.deepEqual(messages, ['resolveUserId timed out after 1000ms'])
+})
+
+test('a resolver that throws or rejects writes the row signed out and reports it', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const resolvers = [
+    () => {
+      throw new Error('session store down')
+    },
+    async () => {
+      throw new Error('token expired')
+    },
+  ]
+  for (const resolveUserId of resolvers) {
+    const handler = createIngestHandler({ sink, allowPublic: true, onError, resolveUserId })
+    const response = await handler(post({ events: [{ event_name: 'a' }] }))
+    assert.equal(response.status, 202)
+  }
+
+  assert.deepEqual(
+    sink.events.map((e) => e.user_id),
+    [null, null]
+  )
+  assert.deepEqual(messages, [
+    'resolveUserId failed: session store down',
+    'resolveUserId failed: token expired',
+  ])
+})
+
+test('secret-authenticated requests never reach the resolver and keep their user_id', async () => {
+  const sink = recordingSink()
+  let calls = 0
+  const handler = createIngestHandler({
+    sink,
+    secret: SECRET,
+    allowPublic: true,
+    resolveUserId: () => {
+      calls += 1
+      return 'from-resolver'
+    },
+  })
+
+  await handler(post({ events: [{ event_name: 'paid', user_id: 'server-user' }] }, SECRET))
+  await handler(post({ events: [{ event_name: 'job_ran' }] }, SECRET))
+
+  assert.equal(calls, 0)
+  assert.deepEqual(sink.events, [
+    { event_name: 'paid', user_id: 'server-user', source: 'web' },
+    { event_name: 'job_ran', source: 'web' },
+  ])
+})
+
+test('the resolver is not called for a request that fails validation', async () => {
+  let calls = 0
+  const handler = createIngestHandler({
+    sink: recordingSink(),
+    allowPublic: true,
+    resolveUserId: () => {
+      calls += 1
+      return 'u'
+    },
+  })
+
+  assert.equal((await handler(post('{not json'))).status, 400)
+  assert.equal((await handler(post({ events: [] }))).status, 400)
+  assert.equal((await handler(post({ events: [{ properties: {} }] }))).status, 400)
+  assert.equal(calls, 0)
+})
+
+test('an integer user id from the resolver is stored as its string', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({ sink, allowPublic: true, resolveUserId: () => 42 })
+
+  await handler(post({ events: [{ event_name: 'a' }] }))
+
+  assert.equal(sink.events[0]?.user_id, '42')
+})
+
+test('NaN, Infinity or a fraction is reported, never stored', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  for (const answer of [Number.NaN, Infinity, 1.5]) {
+    const handler = createIngestHandler({ sink, allowPublic: true, onError, resolveUserId: () => answer })
+    await handler(post({ events: [{ event_name: 'a' }] }))
+  }
+
+  assert.deepEqual(
+    sink.events.map((e) => e.user_id),
+    [null, null, null]
+  )
+  assert.deepEqual(messages, [
+    'resolveUserId returned NaN, expected a string, an integer or null',
+    'resolveUserId returned Infinity, expected a string, an integer or null',
+    'resolveUserId returned 1.5, expected a string, an integer or null',
+  ])
+})
+
+test('a resolver answer of any other type is reported, not silently dropped', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    onError,
+    resolveUserId: () => ({ id: 'u' }) as unknown as string,
+  })
+
+  const response = await handler(post({ events: [{ event_name: 'a' }] }))
+
+  assert.equal(response.status, 202)
+  assert.equal(sink.events[0]?.user_id, null)
+  assert.deepEqual(messages, ['resolveUserId returned an object, expected a string, an integer or null'])
+})
+
+test('an Infinity time limit means no limit, not an instant timeout', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    onError,
+    resolveUserIdTimeoutMs: Infinity,
+    resolveUserId: () => new Promise((resolve) => setTimeout(() => resolve('slow-but-fine'), 30)),
+  })
+
+  await handler(post({ events: [{ event_name: 'a' }] }))
+
+  assert.equal(sink.events[0]?.user_id, 'slow-but-fine')
+  assert.deepEqual(messages, [])
+})
+
+test('an onError that throws or rejects on a resolver failure still lets the events be written', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {})
+  const resolvers = [
+    () => {
+      throw new Error('session store down')
+    },
+    () => new Promise<string>(() => {}),
+    () => ({}) as unknown as string,
+  ]
+  const reporters = [
+    (error: Error) => {
+      throw error
+    },
+    // Typed void, but an async reporter is easy to write and returns a promise.
+    async (error: Error) => {
+      throw error
+    },
+  ]
+  for (const onError of reporters) {
+    for (const resolveUserId of resolvers) {
+      const sink = recordingSink()
+      const handler = createIngestHandler({
+        sink,
+        allowPublic: true,
+        resolveUserIdTimeoutMs: 10,
+        resolveUserId,
+        onError,
+      })
+      const response = await handler(post({ events: [{ event_name: 'a' }] }))
+      assert.equal(response.status, 202)
+      assert.equal(sink.events.length, 1)
+      assert.equal(sink.events[0]?.user_id, null)
+    }
+  }
+  // Let the async reporters' rejections reach the fallback.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const messages = logged.mock.calls.map((call) => String(call.arguments[0]))
+  const expected = (how: string) => [
+    `[bq-analytics] resolveUserId failed: session store down (and onError ${how}: resolveUserId failed: session store down)`,
+    `[bq-analytics] resolveUserId timed out after 10ms (and onError ${how}: resolveUserId timed out after 10ms)`,
+    `[bq-analytics] resolveUserId returned an object, expected a string, an integer or null (and onError ${how}: resolveUserId returned an object, expected a string, an integer or null)`,
+  ]
+  assert.deepEqual(messages, [...expected('threw'), ...expected('rejected')])
+})

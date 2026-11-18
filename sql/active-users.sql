@@ -3,6 +3,22 @@
 -- came once.
 --
 --   bq query --use_legacy_sql=false --parameter='days:INT64:90' < sql/active-users.sql
+--
+-- Stitched through the identity view (sql/identity.sql), a person who browses
+-- signed out on one day and signed in on another is one active user, not two.
+-- Replace the `daily` CTE with:
+--
+--   daily AS (
+--     SELECT
+--       DATE(e.timestamp) AS day,
+--       COALESCE(e.user_id, i.user_id, e.anonymous_id) AS actor
+--     FROM `analytics.events` e
+--     LEFT JOIN `analytics.identity` i ON i.anonymous_id = e.anonymous_id
+--     WHERE NOT e.is_test
+--       AND e.timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL days + 30 DAY)
+--       AND COALESCE(e.user_id, e.anonymous_id) IS NOT NULL
+--     GROUP BY day, actor
+--   ),
 
 DECLARE days INT64 DEFAULT @days;
 
