@@ -402,18 +402,32 @@ test('the resolver is not called for a request that fails validation', async () 
   assert.equal(calls, 0)
 })
 
-test('a numeric user id from the resolver is stored as its string', async () => {
+test('an integer user id from the resolver is stored as its string', async () => {
   const sink = recordingSink()
-  const handler = createIngestHandler({
-    sink,
-    allowPublic: true,
-    // An untyped session whose primary key is a number.
-    resolveUserId: () => 42 as unknown as string,
-  })
+  const handler = createIngestHandler({ sink, allowPublic: true, resolveUserId: () => 42 })
 
   await handler(post({ events: [{ event_name: 'a' }] }))
 
   assert.equal(sink.events[0]?.user_id, '42')
+})
+
+test('NaN, Infinity or a fraction is reported, never stored', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  for (const answer of [Number.NaN, Infinity, 1.5]) {
+    const handler = createIngestHandler({ sink, allowPublic: true, onError, resolveUserId: () => answer })
+    await handler(post({ events: [{ event_name: 'a' }] }))
+  }
+
+  assert.deepEqual(
+    sink.events.map((e) => e.user_id),
+    [null, null, null]
+  )
+  assert.deepEqual(messages, [
+    'resolveUserId returned NaN, expected a string, an integer or null',
+    'resolveUserId returned Infinity, expected a string, an integer or null',
+    'resolveUserId returned 1.5, expected a string, an integer or null',
+  ])
 })
 
 test('a resolver answer of any other type is reported, not silently dropped', async () => {
@@ -430,7 +444,7 @@ test('a resolver answer of any other type is reported, not silently dropped', as
 
   assert.equal(response.status, 202)
   assert.equal(sink.events[0]?.user_id, null)
-  assert.deepEqual(messages, ['resolveUserId returned a object, expected a string or null'])
+  assert.deepEqual(messages, ['resolveUserId returned a object, expected a string, an integer or null'])
 })
 
 test('an Infinity time limit means no limit, not an instant timeout', async () => {
@@ -489,7 +503,7 @@ test('an onError that throws or rejects on a resolver failure still lets the eve
   const expected = [
     '[bq-analytics] resolveUserId failed: session store down (and onError threw)',
     '[bq-analytics] resolveUserId timed out after 10ms (and onError threw)',
-    '[bq-analytics] resolveUserId returned a object, expected a string or null (and onError threw)',
+    '[bq-analytics] resolveUserId returned a object, expected a string, an integer or null (and onError threw)',
   ]
   assert.deepEqual(messages, [...expected, ...expected])
 })

@@ -136,7 +136,9 @@ second one.
 ## Server-Side User Resolution
 
 The ingest handler can decide who is signed in on browser events from your own
-session, so a browser event's `user_id` is never whatever the page claimed:
+session, so a browser event's `user_id` is never whatever the page claimed.
+The identity view trusts every row's `user_id`, so set this on any public
+endpoint whose rows feed it:
 
 ```ts
 export const POST = createIngestHandler({

@@ -16,10 +16,11 @@ minor versions may still change the public API; the entries say so when they do.
   after the body is validated; its answer replaces any `user_id` the body
   carried, and `null` writes the events signed out. It has a time limit
   (`resolveUserIdTimeoutMs`, default 1000); a resolver that times out, throws
-  or returns something other than a string, number or null writes the events
-  signed out and reports through `onError`, never dropping them. A numeric id
-  is stored as its string. Secret-authenticated requests are unchanged, and without the
-  option the handler behaves exactly as before.
+  or returns something other than a string, an integer or null writes the
+  events signed out and reports through `onError` (with an empty events
+  list), never dropping them. An integer id is stored as its string.
+  Secret-authenticated requests are unchanged, and without the option the
+  handler behaves exactly as before.
 - **`readAnonymousId(request)` in `bq-analytics/server`.** Returns the browser
   tracker's `anonymous_id` from a request's cookies, validated, or `null`, so
   server-side events can carry the visitor. To make that possible the browser

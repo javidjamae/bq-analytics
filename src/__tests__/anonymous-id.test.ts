@@ -20,6 +20,10 @@ test('accepts the fallback id a browser without crypto.randomUUID mints', () => 
   assert.equal(readAnonymousId(withCookie('ba_anonymous_id=18c2f3a4b5d-9e8f7a6b')), '18c2f3a4b5d-9e8f7a6b')
 })
 
+test('reads the id when cookie header fields were joined with commas', () => {
+  assert.equal(readAnonymousId(withCookie(`session=abc, ba_anonymous_id=${ID}`)), ID)
+})
+
 test('a malformed duplicate does not hide a valid id after it', () => {
   assert.equal(readAnonymousId(withCookie(`ba_anonymous_id=junk; ba_anonymous_id=${ID}`)), ID)
 })

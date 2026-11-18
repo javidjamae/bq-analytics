@@ -171,7 +171,7 @@ export const POST = createIngestHandler({
 
 It runs once per public request, after the body is validated. Its answer is
 every event's `user_id`, and whatever the body claimed is discarded; `null`
-means signed out, and a numeric id is stored as its string. A resolver that
+means signed out, and an integer id is stored as its string. A resolver that
 throws, runs past its time limit or returns anything else writes the events
 signed out and reports through `onError`, so a slow session store never
 costs you the event. Secret-bearing requests skip it and keep their own
@@ -291,6 +291,9 @@ The view's rules:
 - It shows the browser was later used by that account, not that the anonymous
   activity came first. Compare timestamps when order matters.
 - Test rows are left out (`includeTest: true` keeps them).
+- It trusts each row's `user_id`. On a public endpoint, set `resolveUserId`:
+  without it, a page can write any `user_id` it likes, and so link or unlink
+  any browser it knows the id of.
 - It reads `anonymous_id`, `user_id`, `timestamp` and `is_test` across the
   table's whole history, so a query joined through it pays for that scan too.
   On a large table, materialise it on a schedule and join to the copy.

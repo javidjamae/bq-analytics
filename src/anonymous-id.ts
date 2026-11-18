@@ -39,7 +39,9 @@ export function isAnonymousId(value: unknown): value is string {
 export function readAnonymousId(request: Request): string | null {
   const header = request.headers.get('cookie')
   if (!header) return null
-  for (const pair of header.split(';')) {
+  // `;` separates pairs; `,` appears when separate cookie header fields were
+  // joined (HTTP/2 sends cookies as crumbs). Neither can occur in an id.
+  for (const pair of header.split(/[;,]/)) {
     const eq = pair.indexOf('=')
     if (eq === -1 || pair.slice(0, eq).trim() !== ANONYMOUS_ID_COOKIE) continue
     // A header can carry the name twice (a stale cookie at another path or

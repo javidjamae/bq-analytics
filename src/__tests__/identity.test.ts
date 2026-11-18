@@ -44,6 +44,15 @@ test('refuses a name that would break out of its backticks', () => {
   }
 })
 
+test('sql/identity.sql has the exact line provision.sh deletes for the dev view', () => {
+  // provision.sh keeps test rows in analytics_dev.identity by deleting this
+  // line with sed; if it ever changes shape, the sed would silently miss.
+  const file = readFileSync(join(root, 'sql', 'identity.sql'), 'utf8')
+  const script = readFileSync(join(root, 'scripts', 'provision.sh'), 'utf8')
+  assert.ok(file.split('\n').includes('    AND NOT is_test'))
+  assert.ok(script.includes("'/^    AND NOT is_test$/d'"))
+})
+
 test('sql/identity.sql is the rendered statement, so the two cannot drift', () => {
   const file = readFileSync(join(root, 'sql', 'identity.sql'), 'utf8')
   assert.ok(

@@ -52,11 +52,14 @@ export interface IngestHandlerOptions {
    * carried is discarded: a public endpoint cannot trust a client to say who
    * it is. Return `null` for a signed-out request.
    *
-   * A resolver that throws, returns something other than a string, number or
-   * null, or takes longer than `resolveUserIdTimeoutMs` writes the events
+   * A resolver that throws, returns something other than a string, an
+   * integer or null, or takes longer than `resolveUserIdTimeoutMs` writes the events
    * signed out and is reported through `onError` with an empty `events` list
-   * (nothing was lost, so there is nothing to retry). A numeric id is stored
+   * (nothing was lost, so there is nothing to retry). An integer id is stored
    * as its string.
+   *
+   * The identity view takes every row's `user_id` at its word, so on a public
+   * endpoint set this: without it, a page can write any `user_id` it likes.
    *
    * Mount the endpoint on the page's own origin: the browser's fetch fallback
    * sends cookies only same-origin, so a cross-origin endpoint would see
@@ -65,7 +68,9 @@ export interface IngestHandlerOptions {
    *
    *   resolveUserId: async (request) => (await getSession(request))?.userId ?? null
    */
-  resolveUserId?: (request: Request) => string | null | undefined | Promise<string | null | undefined>
+  resolveUserId?: (
+    request: Request
+  ) => string | number | null | undefined | Promise<string | number | null | undefined>
   /**
    * How long `resolveUserId` may take before the events are written signed
    * out. Default 1000, which is also used for NaN, zero or a negative value.
@@ -141,6 +146,8 @@ export function createIngestHandler(options: IngestHandlerOptions) {
     }
   }
 
+  const describe = (value: unknown) => (typeof value === 'number' ? String(value) : `a ${typeof value}`)
+
   /** The resolver's answer, or null when it fails or runs out of time. */
   async function resolveUser(
     resolver: NonNullable<IngestHandlerOptions['resolveUserId']>,
@@ -170,10 +177,14 @@ export function createIngestHandler(options: IngestHandlerOptions) {
     }
     if (answer === null || answer === undefined || answer === '') return null
     if (typeof answer === 'string') return answer
-    // A numeric primary key is a user id too; anything else is a bug in the
-    // resolver, and silently writing it signed out would hide that.
-    if (typeof answer === 'number' || typeof answer === 'bigint') return String(answer)
-    reportResolverFailure(new Error(`resolveUserId returned a ${typeof answer}, expected a string or null`))
+    // A numeric primary key is a user id too; anything else (NaN, a fraction,
+    // an object) is a bug in the resolver, and silently writing it signed out
+    // or as "NaN" would hide that.
+    if (typeof answer === 'number' && Number.isSafeInteger(answer)) return String(answer)
+    if (typeof answer === 'bigint') return String(answer)
+    reportResolverFailure(
+      new Error(`resolveUserId returned ${describe(answer)}, expected a string, an integer or null`)
+    )
     return null
   }
 
