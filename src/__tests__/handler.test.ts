@@ -450,7 +450,8 @@ test('an Infinity time limit means no limit, not an instant timeout', async () =
   assert.deepEqual(messages, [])
 })
 
-test('an onError that throws on a resolver failure still lets the events be written', async () => {
+test('an onError that throws or rejects on a resolver failure still lets the events be written', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {})
   const resolvers = [
     () => {
       throw new Error('session store down')
@@ -458,10 +459,16 @@ test('an onError that throws on a resolver failure still lets the events be writ
     () => new Promise<string>(() => {}),
     () => ({}) as unknown as string,
   ]
-  const originalConsoleError = console.error
-  const logged: string[] = []
-  console.error = (message: string) => void logged.push(message)
-  try {
+  const reporters = [
+    (error: Error) => {
+      throw error
+    },
+    // Typed void, but an async reporter is easy to write and returns a promise.
+    async (error: Error) => {
+      throw error
+    },
+  ]
+  for (const onError of reporters) {
     for (const resolveUserId of resolvers) {
       const sink = recordingSink()
       const handler = createIngestHandler({
@@ -469,18 +476,20 @@ test('an onError that throws on a resolver failure still lets the events be writ
         allowPublic: true,
         resolveUserIdTimeoutMs: 10,
         resolveUserId,
-        onError: (error) => {
-          throw error
-        },
+        onError,
       })
       const response = await handler(post({ events: [{ event_name: 'a' }] }))
       assert.equal(response.status, 202)
       assert.equal(sink.events.length, 1)
       assert.equal(sink.events[0]?.user_id, null)
     }
-  } finally {
-    console.error = originalConsoleError
   }
-  assert.equal(logged.length, 3)
-  assert.match(logged[0]!, /resolveUserId failed: session store down \(and onError threw/)
+  await new Promise((resolve) => setImmediate(resolve)) // let the async reporters settle
+  const messages = logged.mock.calls.map((call) => String(call.arguments[0]))
+  const expected = [
+    '[bq-analytics] resolveUserId failed: session store down (and onError threw)',
+    '[bq-analytics] resolveUserId timed out after 10ms (and onError threw)',
+    '[bq-analytics] resolveUserId returned a object, expected a string or null (and onError threw)',
+  ]
+  assert.deepEqual(messages, [...expected, ...expected])
 })

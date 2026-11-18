@@ -17,7 +17,9 @@ export interface IngestHandlerOptions {
   /**
    * Where write failures are reported. Default: console.error. Also told when
    * `resolveUserId` fails, with an empty `events` list, since those events
-   * were still written.
+   * were still written. A reporter that throws (or rejects) on a resolver
+   * failure falls back to console.error so the events are still written; on
+   * a write failure its throw propagates, as it always has.
    */
   onError?: ErrorReporter
   /**
@@ -66,8 +68,9 @@ export interface IngestHandlerOptions {
   resolveUserId?: (request: Request) => string | null | undefined | Promise<string | null | undefined>
   /**
    * How long `resolveUserId` may take before the events are written signed
-   * out. Default 1000. Capped at setTimeout's limit (about 24.8 days), so
-   * `Infinity` means no practical limit rather than an instant timeout.
+   * out. Default 1000, which is also used for NaN, zero or a negative value.
+   * Capped at setTimeout's limit (about 24.8 days), so `Infinity` means no
+   * practical limit rather than an instant timeout.
    */
   resolveUserIdTimeoutMs?: number
 }
@@ -113,9 +116,11 @@ export function createIngestHandler(options: IngestHandlerOptions) {
       ? 1000
       : Math.min(resolveUserIdTimeoutMs, 2_147_483_647)
 
-  function report(error: Error, events: AnalyticsEvent[], consolePrefix = ''): void {
-    if (onError) onError(error, { sink: sink.name, events })
-    else console.error(`[bq-analytics] ${consolePrefix}${error.message}`)
+  /** Returns what onError returned, so a caller can catch an async reporter. */
+  function report(error: Error, events: AnalyticsEvent[], consolePrefix = ''): unknown {
+    if (onError) return onError(error, { sink: sink.name, events })
+    console.error(`[bq-analytics] ${consolePrefix}${error.message}`)
+    return undefined
   }
 
   /**
@@ -124,11 +129,15 @@ export function createIngestHandler(options: IngestHandlerOptions) {
    * throws here must not cost them that write either.
    */
   function reportResolverFailure(error: Error): void {
+    const fallback = (thrown: unknown) =>
+      console.error(`[bq-analytics] ${error.message} (and onError threw)`, error, thrown)
     try {
-      report(error, [])
-    } catch (cause) {
-      const thrown = cause instanceof Error ? cause.message : String(cause)
-      console.error(`[bq-analytics] ${error.message} (and onError threw: ${thrown})`)
+      // ErrorReporter returns void, but an async one returns a promise, and
+      // its rejection would otherwise be unhandled.
+      const result: unknown = report(error, [])
+      if (result instanceof Promise) result.catch(fallback)
+    } catch (thrown) {
+      fallback(thrown)
     }
   }
 
@@ -156,7 +165,7 @@ export function createIngestHandler(options: IngestHandlerOptions) {
       clearTimeout(timer)
     }
     if (answer === timedOut) {
-      reportResolverFailure(new Error(`resolveUserId timed out after ${resolveUserIdTimeoutMs}ms`))
+      reportResolverFailure(new Error(`resolveUserId timed out after ${resolveTimeout}ms`))
       return null
     }
     if (answer === null || answer === undefined || answer === '') return null
