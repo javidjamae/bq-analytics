@@ -449,3 +449,38 @@ test('an Infinity time limit means no limit, not an instant timeout', async () =
   assert.equal(sink.events[0]?.user_id, 'slow-but-fine')
   assert.deepEqual(messages, [])
 })
+
+test('an onError that throws on a resolver failure still lets the events be written', async () => {
+  const resolvers = [
+    () => {
+      throw new Error('session store down')
+    },
+    () => new Promise<string>(() => {}),
+    () => ({}) as unknown as string,
+  ]
+  const originalConsoleError = console.error
+  const logged: string[] = []
+  console.error = (message: string) => void logged.push(message)
+  try {
+    for (const resolveUserId of resolvers) {
+      const sink = recordingSink()
+      const handler = createIngestHandler({
+        sink,
+        allowPublic: true,
+        resolveUserIdTimeoutMs: 10,
+        resolveUserId,
+        onError: (error) => {
+          throw error
+        },
+      })
+      const response = await handler(post({ events: [{ event_name: 'a' }] }))
+      assert.equal(response.status, 202)
+      assert.equal(sink.events.length, 1)
+      assert.equal(sink.events[0]?.user_id, null)
+    }
+  } finally {
+    console.error = originalConsoleError
+  }
+  assert.equal(logged.length, 3)
+  assert.match(logged[0]!, /resolveUserId failed: session store down \(and onError threw/)
+})

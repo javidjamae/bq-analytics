@@ -119,43 +119,53 @@ export function createIngestHandler(options: IngestHandlerOptions) {
   }
 
   /**
-   * The resolver's answer, or null when it fails or runs out of time. Its
-   * failures reach onError with no events: the events are still written
-   * (signed out), so nothing about them was lost.
+   * Resolver failures reach onError with no events: the events are still
+   * written (signed out), so nothing about them was lost. A reporter that
+   * throws here must not cost them that write either.
    */
+  function reportResolverFailure(error: Error): void {
+    try {
+      report(error, [])
+    } catch (cause) {
+      const thrown = cause instanceof Error ? cause.message : String(cause)
+      console.error(`[bq-analytics] ${error.message} (and onError threw: ${thrown})`)
+    }
+  }
+
+  /** The resolver's answer, or null when it fails or runs out of time. */
   async function resolveUser(
     resolver: NonNullable<IngestHandlerOptions['resolveUserId']>,
     request: Request
   ): Promise<string | null> {
-    const events: AnalyticsEvent[] = []
     const timedOut = Symbol('timed out')
     let timer: ReturnType<typeof setTimeout> | undefined
+    let answer: unknown
     try {
-      const answer = await Promise.race([
+      answer = await Promise.race([
         // Wrapped so a resolver that throws synchronously is caught here too.
         Promise.resolve().then(() => resolver(request)),
         new Promise<typeof timedOut>((resolve) => {
           timer = setTimeout(() => resolve(timedOut), resolveTimeout)
         }),
       ])
-      if (answer === timedOut) {
-        report(new Error(`resolveUserId timed out after ${resolveUserIdTimeoutMs}ms`), events)
-        return null
-      }
-      if (answer === null || answer === undefined || answer === '') return null
-      if (typeof answer === 'string') return answer
-      // A numeric primary key is a user id too; anything else is a bug in the
-      // resolver, and silently writing it signed out would hide that.
-      if (typeof answer === 'number' || typeof answer === 'bigint') return String(answer)
-      report(new Error(`resolveUserId returned a ${typeof answer}, expected a string or null`), events)
-      return null
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause))
-      report(new Error(`resolveUserId failed: ${error.message}`, { cause: error }), events)
+      reportResolverFailure(new Error(`resolveUserId failed: ${error.message}`, { cause: error }))
       return null
     } finally {
       clearTimeout(timer)
     }
+    if (answer === timedOut) {
+      reportResolverFailure(new Error(`resolveUserId timed out after ${resolveUserIdTimeoutMs}ms`))
+      return null
+    }
+    if (answer === null || answer === undefined || answer === '') return null
+    if (typeof answer === 'string') return answer
+    // A numeric primary key is a user id too; anything else is a bug in the
+    // resolver, and silently writing it signed out would hide that.
+    if (typeof answer === 'number' || typeof answer === 'bigint') return String(answer)
+    reportResolverFailure(new Error(`resolveUserId returned a ${typeof answer}, expected a string or null`))
+    return null
   }
 
   if (!secret && !allowPublic && process.env.NODE_ENV === 'production') {
