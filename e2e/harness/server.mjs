@@ -3,21 +3,68 @@
  * Test harness for the browser tracker.
  *
  * Deliberately dumb: it serves one page, serves the built tracker, and records
- * whatever gets POSTed to it. It does NOT mount `createHandler` — the server
- * side already has unit coverage, and routing the e2e suite through it would
- * mean a browser-side regression could be masked by a server-side change.
- * What is under test here is `src/browser.ts` running in a real browser.
+ * whatever gets POSTed to `/collect`. That path does NOT mount
+ * `createIngestHandler` — the server side already has unit coverage, and
+ * routing the browser specs through it would mean a browser-side regression
+ * could be masked by a server-side change.
+ *
+ * The one exception is `/identity/*`, kept apart from `/collect`, because
+ * what identity.spec.ts tests IS the seam: a real browser's cookies reaching
+ * `resolveUserId` and `readAnonymousId` in the built server entry.
  */
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildRow, createIngestHandler, readAnonymousId } from '../../dist/server.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const port = Number(process.env.HARNESS_PORT ?? 4319)
 
 /** Every event the browser has delivered, in arrival order. */
 let received = []
+
+// --- /identity: the ingest handler with a resolver, over a fake session ---
+
+const IDENTITY_SECRET = 'e2e-secret'
+/** Rows exactly as BigQuerySink would insert them, in arrival order. */
+let rows = []
+
+/** The app's own session, which is all `resolveUserId` should trust. */
+function sessionUser(request) {
+  const match = /(?:^|;\s*)session=([^;]+)/.exec(request.headers.get('cookie') ?? '')
+  return match ? match[1] : null
+}
+
+const ingest = createIngestHandler({
+  sink: {
+    name: 'harness-rows',
+    async send(events) {
+      rows.push(...events.map(buildRow))
+    },
+  },
+  secret: IDENTITY_SECRET,
+  allowPublic: true,
+  resolveUserId: (request) => sessionUser(request),
+})
+
+/** node:http to the web-standard Request the library speaks. */
+function toRequest(req, body) {
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+  }
+  return new Request(`http://127.0.0.1:${port}${req.url}`, {
+    method: req.method,
+    headers,
+    body: req.method === 'GET' || req.method === 'HEAD' ? undefined : body,
+  })
+}
+
+async function send(res, response) {
+  res.writeHead(response.status, { 'content-type': response.headers.get('content-type') ?? 'text/plain' })
+  res.end(Buffer.from(await response.arrayBuffer()))
+}
 
 // An allowlist rather than static-directory serving: the harness binds a port
 // on a developer machine and in CI, and there is no reason for it to be able
@@ -68,6 +115,45 @@ const server = createServer(async (req, res) => {
     return
   }
 
+  if (req.method === 'POST' && pathname === '/identity/ingest') {
+    await send(res, await ingest(toRequest(req, await readBody(req))))
+    return
+  }
+
+  if (req.method === 'POST' && pathname === '/identity/login') {
+    res.writeHead(204, { 'set-cookie': 'session=user-42; Path=/; SameSite=Lax; HttpOnly' }).end()
+    return
+  }
+
+  // A server-side event, as an app's purchase handler would emit it: it knows
+  // the user from its session and the visitor only from readAnonymousId.
+  if (req.method === 'POST' && pathname === '/identity/purchase') {
+    const request = toRequest(req, await readBody(req))
+    const event = {
+      event_name: 'purchase_completed',
+      user_id: sessionUser(request),
+      anonymous_id: readAnonymousId(request),
+      source: 'api',
+      properties: { plan: 'pro' },
+    }
+    await send(
+      res,
+      await ingest(
+        new Request(`http://127.0.0.1:${port}/identity/ingest`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-analytics-secret': IDENTITY_SECRET },
+          body: JSON.stringify({ events: [event] }),
+        })
+      )
+    )
+    return
+  }
+
+  if (req.method === 'GET' && pathname === '/identity/_rows') {
+    json(res, 200, rows)
+    return
+  }
+
   if (req.method === 'GET' && pathname === '/_events') {
     json(res, 200, received)
     return
@@ -75,6 +161,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === 'POST' && pathname === '/_reset') {
     received = []
+    rows = []
     res.writeHead(204).end()
     return
   }

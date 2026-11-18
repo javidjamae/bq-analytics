@@ -104,7 +104,8 @@ webhook ──┘                                                   ▲
 ```
 
 Creates `analytics` and `analytics_dev`, each with an `events` table
-day-partitioned on `timestamp`. With `--writer`, grants that service account
+day-partitioned on `timestamp` and an `identity` view over it (see
+[Identity](#identity)). With `--writer`, grants that service account
 `roles/bigquery.dataEditor` (insert events) and `roles/bigquery.jobUser` (run
 queries, e.g. a freshness check) on the project. Both are project-wide, so
 keep analytics in its own GCP project. Safe to re-run.
@@ -153,6 +154,26 @@ export const POST = createIngestHandler({
   allowPublic: true,                        // browser beacons, same URL
 })
 ```
+
+A public endpoint cannot trust a `user_id` the page sends either. Give the
+handler `resolveUserId` and it asks your own session who is signed in:
+
+```ts
+export const POST = createIngestHandler({
+  sink: new BigQuerySink(),
+  secret: process.env.ANALYTICS_API_SECRET,
+  allowPublic: true,
+  resolveUserId: async (request) => (await getSession(request))?.userId ?? null,
+  resolveUserIdTimeoutMs: 500, // default 1000
+})
+```
+
+It runs once per public request, after the body is validated. Its answer is
+every event's `user_id`, and whatever the body claimed is discarded; `null`
+means signed out. A resolver that throws or runs past its time limit writes the
+events signed out and reports through `onError`, so a slow session store never
+costs you the event. Secret-bearing requests skip it and keep their own
+`user_id`. Without the option, nothing changes.
 
 ### 4. Track from the browser
 
@@ -229,12 +250,56 @@ rather than an event log:
 - `attribution.sql` — which page or post produced a conversion, as a rate
   against that page's own traffic
 - `active-users.sql` — DAU, WAU, MAU and the stickiness ratio
+- `identity.sql` — the identity view: which visitor became which user (see
+  [Identity](#identity))
 
 ```bash
 bq query --use_legacy_sql=false \
   --parameter='steps:ARRAY<STRING>:["page_viewed","cta_clicked","call_booked"]' \
   --parameter='days:INT64:30' < sql/funnel.sql
 ```
+
+## Identity
+
+Browser events carry the visitor's `anonymous_id`; server events (a payment
+webhook, a background job) know the user. Three pieces join them:
+
+1. **`resolveUserId`** on the ingest handler stamps the signed-in user on
+   browser events from your session (see [3b](#3b-serving-browser-traffic-on-the-same-endpoint)).
+2. **`readAnonymousId(request)`** from `bq-analytics/server` returns the
+   visitor's id on a server request, or `null`. The browser tracker mirrors
+   its id into a first-party `ba_anonymous_id` cookie for this. Put it on
+   server-side events so they join the page views before them.
+   [Carrying the visitor through](docs/carrying-the-visitor.md) covers the
+   flows that lose it: a redirect to another origin and back, a hosted
+   checkout, and a link opened on another device.
+3. **The identity view**, one row per (`anonymous_id`, `user_id`) with
+   `first_linked_at`, built from rows that carry both. `provision.sh` creates
+   it; `identityViewDDL({ project, dataset, table, view })` from the root
+   entry renders it for any other names.
+
+The view's rules:
+
+- A browser seen with more than one user (a shared computer) is **left out**.
+  A wrong attribution is worse than a missing one.
+- One user can have several browsers, so the mapping is one-to-many: count
+  people with `COUNT(DISTINCT user_id)`. Each `anonymous_id` appears at most
+  once, so joining events to it never duplicates an event.
+- It shows the browser was later used by that account, not that the anonymous
+  activity came first. Compare timestamps when order matters.
+- Test rows are left out (`includeTest: true` keeps them).
+
+To count a visitor's signed-out events under the account they became:
+
+```sql
+SELECT COALESCE(e.user_id, i.user_id, e.anonymous_id) AS actor, e.event_name
+FROM `analytics.events` e
+LEFT JOIN `analytics.identity` i ON i.anonymous_id = e.anonymous_id
+WHERE NOT e.is_test
+```
+
+The funnel, attribution and active-users queries each carry a note showing the
+same change.
 
 ## Event naming
 

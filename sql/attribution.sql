@@ -7,6 +7,19 @@
 --   bq query --use_legacy_sql=false \
 --     --parameter='conversion:STRING:call_booked' \
 --     --parameter='days:INT64:30' < sql/attribution.sql
+--
+-- Stitched through the identity view (sql/identity.sql), a visitor counts once
+-- whether they converted signed in or signed out. Replace the `window_events`
+-- CTE with the one below, then use `actor` in place of both
+-- COALESCE(user_id, anonymous_id) expressions:
+--
+--   window_events AS (
+--     SELECT e.*, COALESCE(e.user_id, i.user_id, e.anonymous_id) AS actor
+--     FROM `analytics.events` e
+--     LEFT JOIN `analytics.identity` i ON i.anonymous_id = e.anonymous_id
+--     WHERE NOT e.is_test
+--       AND e.timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL days DAY)
+--   ),
 
 DECLARE conversion STRING DEFAULT @conversion;
 DECLARE days INT64 DEFAULT @days;

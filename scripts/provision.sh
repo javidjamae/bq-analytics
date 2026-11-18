@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Create the analytics datasets and events table for a project, and grant the
-# app's writer service account what it needs.
+# Create the analytics datasets, events table and identity view for a project,
+# and grant the app's writer service account what it needs.
 #
 #   ./scripts/provision.sh <gcp-project-id> [location] [--writer <sa-email>]
 #
 # Creates BOTH `analytics` and `analytics_dev` with the same table, because the
 # dev dataset is what keeps local runs out of real numbers. Safe to re-run:
 # every step is create-if-missing, and every grant is an idempotent binding.
+#
+# Each dataset also gets `identity`, the view from sql/identity.sql (which
+# anonymous_id became which user_id). Create-if-missing like the rest, so a
+# view you changed by hand is left alone; drop it and re-run to pick up a newer
+# definition.
 #
 # --writer grants that service account, on the project:
 #   roles/bigquery.dataEditor  insert events
@@ -45,11 +50,15 @@ if [[ $WRITER_GIVEN -eq 1 && "$WRITER" != *@*.iam.gserviceaccount.com ]]; then
   exit 64
 fi
 
-SCHEMA="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/schema/events.schema.json"
-if [[ ! -f "$SCHEMA" ]]; then
-  echo "schema not found at $SCHEMA" >&2
-  exit 66
-fi
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCHEMA="$ROOT/schema/events.schema.json"
+IDENTITY_SQL="$ROOT/sql/identity.sql"
+for FILE in "$SCHEMA" "$IDENTITY_SQL"; do
+  if [[ ! -f "$FILE" ]]; then
+    echo "not found: $FILE" >&2
+    exit 66
+  fi
+done
 
 for DATASET in analytics analytics_dev; do
   if bq --project_id="$PROJECT" show --dataset "$DATASET" >/dev/null 2>&1; then
@@ -69,6 +78,18 @@ for DATASET in analytics analytics_dev; do
       --time_partitioning_type=DAY \
       --description="Product analytics events — see github.com/javidjamae/bq-analytics" \
       "$DATASET.events" "$SCHEMA"
+  fi
+
+  if bq --project_id="$PROJECT" show "$DATASET.identity" >/dev/null 2>&1; then
+    echo "view $DATASET.identity already exists"
+  else
+    echo "creating view $DATASET.identity"
+    # The file names `analytics.events`; qualify both names for this project
+    # and dataset, so the view never depends on a default project.
+    sed -e "s|\`analytics\.events\`|\`$PROJECT.$DATASET.events\`|g" \
+        -e "s|\`analytics\.identity\`|\`$PROJECT.$DATASET.identity\`|g" \
+        "$IDENTITY_SQL" \
+      | bq --project_id="$PROJECT" query --use_legacy_sql=false >/dev/null
   fi
 done
 

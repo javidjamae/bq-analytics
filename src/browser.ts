@@ -37,6 +37,8 @@ export interface BrowserTracker {
   sessionId(): string
 }
 
+// Also the cookie name `readAnonymousId` reads (src/anonymous-id.ts). Not
+// imported from there: this file stays a single self-contained module.
 const ANON_KEY = 'ba_anonymous_id'
 const SESSION_KEY = 'ba_session'
 const USER_KEY = 'ba_user_id'
@@ -53,6 +55,22 @@ function safeStorage(kind: 'local' | 'session'): Storage | null {
     // Private browsing and blocked third-party storage both land here. The
     // tracker keeps working; ids just don't survive the page.
     return null
+  }
+}
+
+/**
+ * Mirrors the anonymous id into a first-party cookie so the server can read the
+ * visitor off an ordinary request (`readAnonymousId` in bq-analytics/server),
+ * including a top-level navigation back from another origin, which Lax allows.
+ * Rewritten on every event, which keeps the expiry rolling.
+ */
+function mirrorToCookie(id: string): void {
+  try {
+    const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+    document.cookie = `${ANON_KEY}=${encodeURIComponent(id)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`
+  } catch {
+    // Sandboxed frames and some privacy modes throw on cookie writes. The id
+    // still goes out on every event body; only the server-side read is lost.
   }
 }
 
@@ -99,6 +117,7 @@ export function createBrowserTracker(options: BrowserTrackerOptions): BrowserTra
       id = uuid()
       write(store, ANON_KEY, id)
     }
+    if (typeof document !== 'undefined') mirrorToCookie(id)
     return id
   }
 

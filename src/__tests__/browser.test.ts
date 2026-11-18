@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { beforeEach, test } from 'node:test'
+import { readAnonymousId } from '../anonymous-id.js'
 import { createBrowserTracker } from '../browser.js'
 import type { AnalyticsEvent } from '../types.js'
 
@@ -136,4 +137,50 @@ test('a caller-supplied internal property wins over the stamp', async () => {
   const tracker = createBrowserTracker({ url: '/api/events' })
   tracker.track('override', { internal: 'qa-bot' })
   assert.equal((await lastEvent()).properties?.internal, 'qa-bot')
+})
+
+// --- the anonymous id, as the server sees it ------------------------------
+
+function writtenCookie(): string {
+  return ((globalThis as Record<string, unknown>).document as { cookie?: string }).cookie ?? ''
+}
+
+test('the anonymous id is mirrored into a cookie the server helper reads back', async () => {
+  const tracker = createBrowserTracker({ url: '/api/events' })
+  tracker.track('thing_happened')
+  const event = await lastEvent()
+
+  const cookie = writtenCookie()
+  assert.match(cookie, /^ba_anonymous_id=[^;]+; Path=\/; Max-Age=31536000; SameSite=Lax$/)
+  // What a browser would send back is the name=value pair before the attributes.
+  const request = new Request('https://www.example.com/signup', {
+    headers: { cookie: cookie.split(';')[0]! },
+  })
+  assert.equal(readAnonymousId(request), event.anonymous_id)
+})
+
+test('the cookie is Secure on an https page', () => {
+  const win = (globalThis as Record<string, unknown>).window as { location: { protocol?: string } }
+  win.location.protocol = 'https:'
+  createBrowserTracker({ url: '/api/events' }).anonymousId()
+  assert.match(writtenCookie(), /; Secure$/)
+})
+
+test('a cookie write that throws never breaks tracking', async () => {
+  Object.defineProperty(globalThis, 'document', {
+    value: {
+      title: 'Page',
+      referrer: '',
+      set cookie(_value: string) {
+        throw new Error('cookies blocked')
+      },
+    },
+    configurable: true,
+    writable: true,
+  })
+  const tracker = createBrowserTracker({ url: '/api/events' })
+  tracker.track('still_tracked')
+  const event = await lastEvent()
+  assert.equal(event.event_name, 'still_tracked')
+  assert.ok(event.anonymous_id)
 })

@@ -11,6 +11,29 @@ minor versions may still change the public API; the entries say so when they do.
 
 ### Added
 
+- **`resolveUserId` on `createIngestHandler`.** Optional. For public
+  (secretless) requests it decides the signed-in user from your own session,
+  after the body is validated; its answer replaces any `user_id` the body
+  carried, and `null` writes the events signed out. It has a time limit
+  (`resolveUserIdTimeoutMs`, default 1000); a resolver that times out or
+  throws writes the events signed out and reports through `onError`, never
+  dropping them. Secret-authenticated requests are unchanged, and without the
+  option the handler behaves exactly as before.
+- **`readAnonymousId(request)` in `bq-analytics/server`.** Returns the browser
+  tracker's `anonymous_id` from a request's cookies, validated, or `null`, so
+  server-side events can carry the visitor. To make that possible the browser
+  tracker now also writes its id to a first-party cookie, `ba_anonymous_id`
+  (`Path=/`, `SameSite=Lax`, one year, `Secure` on https). New docs page,
+  [Carrying the visitor through](docs/carrying-the-visitor.md), covers
+  redirects, hosted checkouts and links opened on another device.
+- **The identity view.** `sql/identity.sql`, and `identityViewDDL()` from the
+  root entry to render it for any project, dataset, table and view name: one
+  row per (`anonymous_id`, `user_id`) with `first_linked_at`. A browser linked
+  to more than one user is left out, one user may have several browsers, and
+  test rows are left out unless `includeTest` is set. `provision.sh` now
+  creates it as `identity` next to each events table; existing projects can
+  re-run it (it is idempotent). `funnel.sql`, `attribution.sql` and
+  `active-users.sql` carry a note on joining through it.
 - **Internal-traffic flag in the browser tracker.** Visit any page once with
   `?internal=1` and that browser is marked in localStorage (`ba_internal`);
   every subsequent event's properties carry `internal: true`, so your own

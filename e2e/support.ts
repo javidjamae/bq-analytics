@@ -18,6 +18,7 @@ export interface HarnessTracker {
   track(eventName: string, properties?: Record<string, unknown>): void
   page(properties?: Record<string, unknown>): void
   identify(userId: string): void
+  anonymousId(): string
 }
 
 // What `e2e/harness/page.html` hangs off `window`. Declared globally so specs

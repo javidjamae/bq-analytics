@@ -8,6 +8,23 @@
 --   bq query --use_legacy_sql=false \
 --     --parameter='steps:ARRAY<STRING>:["page_viewed","cta_clicked","call_booked"]' \
 --     --parameter='days:INT64:30' < sql/funnel.sql
+--
+-- Stitched through the identity view (sql/identity.sql), a visitor who viewed
+-- a page signed out and bought signed in is one person who reached both steps,
+-- not two people who reached one each. Replace the `events` CTE with:
+--
+--   events AS (
+--     SELECT
+--       COALESCE(e.user_id, i.user_id, e.anonymous_id) AS actor,
+--       e.event_name,
+--       e.timestamp
+--     FROM `analytics.events` e
+--     LEFT JOIN `analytics.identity` i ON i.anonymous_id = e.anonymous_id
+--     WHERE NOT e.is_test
+--       AND e.timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL days DAY)
+--       AND e.event_name IN UNNEST(steps)
+--       AND COALESCE(e.user_id, e.anonymous_id) IS NOT NULL
+--   ),
 
 DECLARE steps ARRAY<STRING> DEFAULT @steps;
 DECLARE days INT64 DEFAULT @days;

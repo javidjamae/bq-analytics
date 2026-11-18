@@ -196,3 +196,181 @@ test('refuses to build an unauthenticated endpoint in production', () => {
     process.env.NODE_ENV = previous
   }
 })
+
+// --- resolveUserId -------------------------------------------------------
+
+function quietReporter(): { messages: string[]; onError: (error: Error) => void } {
+  const messages: string[] = []
+  return { messages, onError: (error) => messages.push(error.message) }
+}
+
+test('no resolver: public and trusted rows are exactly what they were before the option existed', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({ sink, secret: SECRET, allowPublic: true, source: 'api' })
+
+  await handler(post({ events: [{ event_name: 'a', user_id: 'from-body', anonymous_id: 'anon' }] }))
+  await handler(post({ events: [{ event_name: 'b' }] }))
+  await handler(post({ events: [{ event_name: 'c', user_id: 'server-user' }] }, SECRET))
+
+  // deepEqual on the whole event: no user_id key appears where the body had
+  // none, and a body-supplied one passes through untouched.
+  assert.deepEqual(sink.events, [
+    { event_name: 'a', user_id: 'from-body', anonymous_id: 'anon', source: 'browser' },
+    { event_name: 'b', source: 'browser' },
+    { event_name: 'c', user_id: 'server-user', source: 'api' },
+  ])
+})
+
+test('resolveUserId stamps its answer on every event of a public request', async () => {
+  const sink = recordingSink()
+  const seen: Request[] = []
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    resolveUserId: async (request) => {
+      seen.push(request)
+      return request.headers.get('cookie') === 'session=abc' ? 'user-1' : null
+    },
+  })
+
+  const request = new Request('https://example.test/api/events', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: 'session=abc' },
+    body: JSON.stringify({ events: [{ event_name: 'a' }, { event_name: 'b' }] }),
+  })
+  const response = await handler(request)
+
+  assert.equal(response.status, 202)
+  assert.equal(seen.length, 1, 'called once per request, not once per event')
+  assert.equal(seen[0], request, 'receives the incoming request')
+  assert.deepEqual(
+    sink.events.map((e) => e.user_id),
+    ['user-1', 'user-1']
+  )
+})
+
+test('resolveUserId discards a user_id the body supplied', async () => {
+  const sink = recordingSink()
+  const handler = createIngestHandler({ sink, allowPublic: true, resolveUserId: () => 'real-user' })
+
+  await handler(post({ events: [{ event_name: 'a', user_id: 'forged-user' }] }))
+
+  assert.equal(sink.events[0]?.user_id, 'real-user')
+})
+
+test('a signed-out request writes user_id null, even when the body named a user', async () => {
+  const sink = recordingSink()
+  for (const answer of [null, undefined, '']) {
+    const handler = createIngestHandler({ sink, allowPublic: true, resolveUserId: () => answer })
+    await handler(post({ events: [{ event_name: 'a', user_id: 'forged-user' }] }))
+  }
+
+  assert.deepEqual(
+    sink.events.map((e) => e.user_id),
+    [null, null, null]
+  )
+})
+
+test('a resolver that outlasts its time limit writes the row signed out and reports it', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    onError,
+    resolveUserIdTimeoutMs: 20,
+    resolveUserId: () => new Promise((resolve) => setTimeout(() => resolve('too-late'), 200)),
+  })
+
+  const started = Date.now()
+  const response = await handler(post({ events: [{ event_name: 'a', user_id: 'forged-user' }] }))
+
+  assert.equal(response.status, 202)
+  assert.ok(Date.now() - started < 150, 'the handler waited past the time limit')
+  assert.equal(sink.events.length, 1)
+  assert.equal(sink.events[0]?.user_id, null)
+  assert.deepEqual(messages, ['resolveUserId timed out after 20ms'])
+})
+
+test('the resolver time limit defaults to one second', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const handler = createIngestHandler({
+    sink,
+    allowPublic: true,
+    onError,
+    resolveUserId: () => new Promise(() => {}),
+  })
+
+  await handler(post({ events: [{ event_name: 'a' }] }))
+
+  assert.equal(sink.events[0]?.user_id, null)
+  assert.deepEqual(messages, ['resolveUserId timed out after 1000ms'])
+})
+
+test('a resolver that throws or rejects writes the row signed out and reports it', async () => {
+  const sink = recordingSink()
+  const { messages, onError } = quietReporter()
+  const resolvers = [
+    () => {
+      throw new Error('session store down')
+    },
+    async () => {
+      throw new Error('token expired')
+    },
+  ]
+  for (const resolveUserId of resolvers) {
+    const handler = createIngestHandler({ sink, allowPublic: true, onError, resolveUserId })
+    const response = await handler(post({ events: [{ event_name: 'a' }] }))
+    assert.equal(response.status, 202)
+  }
+
+  assert.deepEqual(
+    sink.events.map((e) => e.user_id),
+    [null, null]
+  )
+  assert.deepEqual(messages, [
+    'resolveUserId failed: session store down',
+    'resolveUserId failed: token expired',
+  ])
+})
+
+test('secret-authenticated requests never reach the resolver and keep their user_id', async () => {
+  const sink = recordingSink()
+  let calls = 0
+  const handler = createIngestHandler({
+    sink,
+    secret: SECRET,
+    allowPublic: true,
+    resolveUserId: () => {
+      calls += 1
+      return 'from-resolver'
+    },
+  })
+
+  await handler(post({ events: [{ event_name: 'paid', user_id: 'server-user' }] }, SECRET))
+  await handler(post({ events: [{ event_name: 'job_ran' }] }, SECRET))
+
+  assert.equal(calls, 0)
+  assert.deepEqual(sink.events, [
+    { event_name: 'paid', user_id: 'server-user', source: 'web' },
+    { event_name: 'job_ran', source: 'web' },
+  ])
+})
+
+test('the resolver is not called for a request that fails validation', async () => {
+  let calls = 0
+  const handler = createIngestHandler({
+    sink: recordingSink(),
+    allowPublic: true,
+    resolveUserId: () => {
+      calls += 1
+      return 'u'
+    },
+  })
+
+  assert.equal((await handler(post('{not json'))).status, 400)
+  assert.equal((await handler(post({ events: [] }))).status, 400)
+  assert.equal((await handler(post({ events: [{ properties: {} }] }))).status, 400)
+  assert.equal(calls, 0)
+})

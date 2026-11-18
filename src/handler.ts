@@ -38,6 +38,24 @@ export interface IngestHandlerOptions {
   allowPublic?: boolean
   /** Source stamped on public (no-secret) events. Default `browser`. */
   publicSource?: string
+  /**
+   * Who is signed in, decided by your own session rather than by the request
+   * body. Called once per public (no-secret) request, after the body has been
+   * validated and read, so read the session from headers or cookies. Its
+   * answer becomes every event's `user_id`, and any `user_id` the body
+   * carried is discarded: a public endpoint cannot trust a client to say who
+   * it is. Return `null` for a signed-out request.
+   *
+   * A resolver that throws or takes longer than `resolveUserIdTimeoutMs`
+   * writes the events signed out and is reported through `onError`; the
+   * events are never dropped for it. Requests that present the secret are
+   * trusted to name their own user and never reach the resolver.
+   *
+   *   resolveUserId: async (request) => (await getSession(request))?.userId ?? null
+   */
+  resolveUserId?: (request: Request) => string | null | undefined | Promise<string | null | undefined>
+  /** How long `resolveUserId` may take before the events are written signed out. Default 1000. */
+  resolveUserIdTimeoutMs?: number
 }
 
 function secretMatches(provided: string | null, expected: string): boolean {
@@ -70,7 +88,44 @@ export function createIngestHandler(options: IngestHandlerOptions) {
     waitUntil,
     allowPublic = false,
     publicSource = 'browser',
+    resolveUserId,
+    resolveUserIdTimeoutMs = 1000,
   } = options
+
+  function report(error: Error, events: AnalyticsEvent[]): void {
+    if (onError) onError(error, { sink: sink.name, events })
+    else console.error(`[bq-analytics] ${error.message}`)
+  }
+
+  /** The resolver's answer, or null when it fails or runs out of time. */
+  async function resolveUser(
+    resolver: NonNullable<IngestHandlerOptions['resolveUserId']>,
+    request: Request,
+    events: AnalyticsEvent[]
+  ): Promise<string | null> {
+    const timedOut = Symbol('timed out')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const answer = await Promise.race([
+        // Wrapped so a resolver that throws synchronously is caught here too.
+        Promise.resolve().then(() => resolver(request)),
+        new Promise<typeof timedOut>((resolve) => {
+          timer = setTimeout(() => resolve(timedOut), resolveUserIdTimeoutMs)
+        }),
+      ])
+      if (answer === timedOut) {
+        report(new Error(`resolveUserId timed out after ${resolveUserIdTimeoutMs}ms`), events)
+        return null
+      }
+      return typeof answer === 'string' && answer !== '' ? answer : null
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause))
+      report(new Error(`resolveUserId failed: ${error.message}`, { cause: error }), events)
+      return null
+    } finally {
+      clearTimeout(timer)
+    }
+  }
 
   if (!secret && !allowPublic && process.env.NODE_ENV === 'production') {
     throw new Error(
@@ -111,9 +166,15 @@ export function createIngestHandler(options: IngestHandlerOptions) {
       return Response.json({ error: 'every event needs an event_name' }, { status: 400 })
     }
 
-    const stamped = trusted
-      ? events.map((e) => ({ ...e, source: e.source ?? body.source ?? source }))
-      : events.map((e) => ({ ...e, source: publicSource }))
+    let stamped: AnalyticsEvent[]
+    if (trusted) {
+      stamped = events.map((e) => ({ ...e, source: e.source ?? body.source ?? source }))
+    } else if (resolveUserId) {
+      const userId = await resolveUser(resolveUserId, request, events)
+      stamped = events.map((e) => ({ ...e, source: publicSource, user_id: userId }))
+    } else {
+      stamped = events.map((e) => ({ ...e, source: publicSource }))
+    }
     const write = sink.send(stamped)
 
     if (waitUntil) {
