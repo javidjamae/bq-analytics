@@ -18,8 +18,10 @@ export interface IngestHandlerOptions {
    * Where write failures are reported. Default: console.error. Also told when
    * `resolveUserId` fails, with an empty `events` list, since those events
    * were still written. A reporter that throws (or rejects) on a resolver
-   * failure falls back to console.error so the events are still written; on
-   * a write failure its throw propagates, as it always has.
+   * failure falls back to console.error so the events are still written. On
+   * a write failure it behaves as it always has: a throw propagates, and the
+   * rejection of an async reporter is not caught, so keep reporters
+   * synchronous or catch inside them.
    */
   onError?: ErrorReporter
   /**
@@ -134,15 +136,17 @@ export function createIngestHandler(options: IngestHandlerOptions) {
    * throws here must not cost them that write either.
    */
   function reportResolverFailure(error: Error): void {
-    const fallback = (thrown: unknown) =>
-      console.error(`[bq-analytics] ${error.message} (and onError threw)`, error, thrown)
+    const fallback = (how: string) => (thrown: unknown) => {
+      const detail = thrown instanceof Error ? thrown.message : String(thrown)
+      console.error(`[bq-analytics] ${error.message} (and onError ${how}: ${detail})`, error, thrown)
+    }
     try {
-      // ErrorReporter returns void, but an async one returns a promise, and
-      // its rejection would otherwise be unhandled.
-      const result: unknown = report(error, [])
-      if (result instanceof Promise) result.catch(fallback)
+      // ErrorReporter returns void, but an async one returns a promise (or a
+      // thenable), and its rejection would otherwise be unhandled.
+      const result = report(error, []) as { then?: unknown } | undefined
+      if (typeof result?.then === 'function') Promise.resolve(result).catch(fallback('rejected'))
     } catch (thrown) {
-      fallback(thrown)
+      fallback('threw')(thrown)
     }
   }
 

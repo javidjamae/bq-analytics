@@ -498,12 +498,13 @@ test('an onError that throws or rejects on a resolver failure still lets the eve
       assert.equal(sink.events[0]?.user_id, null)
     }
   }
-  await new Promise((resolve) => setImmediate(resolve)) // let the async reporters settle
+  // Let the async reporters' rejections reach the fallback.
+  await new Promise((resolve) => setTimeout(resolve, 20))
   const messages = logged.mock.calls.map((call) => String(call.arguments[0]))
-  const expected = [
-    '[bq-analytics] resolveUserId failed: session store down (and onError threw)',
-    '[bq-analytics] resolveUserId timed out after 10ms (and onError threw)',
-    '[bq-analytics] resolveUserId returned a object, expected a string, an integer or null (and onError threw)',
+  const expected = (how: string) => [
+    `[bq-analytics] resolveUserId failed: session store down (and onError ${how}: resolveUserId failed: session store down)`,
+    `[bq-analytics] resolveUserId timed out after 10ms (and onError ${how}: resolveUserId timed out after 10ms)`,
+    `[bq-analytics] resolveUserId returned a object, expected a string, an integer or null (and onError ${how}: resolveUserId returned a object, expected a string, an integer or null)`,
   ]
-  assert.deepEqual(messages, [...expected, ...expected])
+  assert.deepEqual(messages, [...expected('threw'), ...expected('rejected')])
 })
