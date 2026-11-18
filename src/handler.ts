@@ -150,7 +150,12 @@ export function createIngestHandler(options: IngestHandlerOptions) {
     }
   }
 
-  const describe = (value: unknown) => (typeof value === 'number' ? String(value) : `a ${typeof value}`)
+  const describe = (value: unknown) => {
+    if (typeof value === 'number') return String(value)
+    // "an object", not "a object": the message is published output.
+    const kind = typeof value
+    return `${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind}`
+  }
 
   /** The resolver's answer, or null when it fails or runs out of time. */
   async function resolveUser(

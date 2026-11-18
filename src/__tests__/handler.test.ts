@@ -444,7 +444,7 @@ test('a resolver answer of any other type is reported, not silently dropped', as
 
   assert.equal(response.status, 202)
   assert.equal(sink.events[0]?.user_id, null)
-  assert.deepEqual(messages, ['resolveUserId returned a object, expected a string, an integer or null'])
+  assert.deepEqual(messages, ['resolveUserId returned an object, expected a string, an integer or null'])
 })
 
 test('an Infinity time limit means no limit, not an instant timeout', async () => {
@@ -504,7 +504,7 @@ test('an onError that throws or rejects on a resolver failure still lets the eve
   const expected = (how: string) => [
     `[bq-analytics] resolveUserId failed: session store down (and onError ${how}: resolveUserId failed: session store down)`,
     `[bq-analytics] resolveUserId timed out after 10ms (and onError ${how}: resolveUserId timed out after 10ms)`,
-    `[bq-analytics] resolveUserId returned a object, expected a string, an integer or null (and onError ${how}: resolveUserId returned a object, expected a string, an integer or null)`,
+    `[bq-analytics] resolveUserId returned an object, expected a string, an integer or null (and onError ${how}: resolveUserId returned an object, expected a string, an integer or null)`,
   ]
   assert.deepEqual(messages, [...expected('threw'), ...expected('rejected')])
 })
