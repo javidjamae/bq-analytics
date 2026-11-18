@@ -9,6 +9,10 @@ minor versions may still change the public API; the entries say so when they do.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.4.0 — 2026-11-18
+
 ### Added
 
 - **`resolveUserId` on `createIngestHandler`.** Optional. For public
